@@ -1,0 +1,10 @@
+{
+  "name": "chatmodz-repo",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "pnpm --filter @workspace/chatmodz run dev",
+    "build": "pnpm --filter @workspace/chatmodz run build",
+    "typecheck": "pnpm --filter @workspace/chatmodz run typecheck"
+  }
+}

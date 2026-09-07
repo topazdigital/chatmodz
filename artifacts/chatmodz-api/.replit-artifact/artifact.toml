@@ -1,0 +1,25 @@
+kind = "api"
+previewPath = "/healthz"
+title = "Chatmodz API"
+version = "1.0.0"
+
+[[services]]
+localPort = 8080
+name = "Chatmodz API"
+paths = ["/api", "/healthz"]
+
+[services.development]
+run = "pnpm --filter @workspace/chatmodz-api run dev"
+
+[services.production.build]
+args = ["pnpm", "--filter", "@workspace/chatmodz-api", "run", "build"]
+
+[services.production.run]
+args = ["node", "artifacts/chatmodz-api/dist/index.mjs"]
+
+[services.production.run.env]
+PORT = "8080"
+NODE_ENV = "production"
+
+[services.production.health.startup]
+path = "/healthz"

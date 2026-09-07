@@ -1,0 +1,28 @@
+{
+  "name": "@workspace/chatmodz-api",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "pnpm run build && node dist/index.mjs",
+    "build": "node build.mjs",
+    "start": "node dist/index.mjs"
+  },
+  "dependencies": {
+    "bcrypt": "^6.0.0",
+    "cors": "^2.8.5",
+    "express": "^5.1.0",
+    "jsonwebtoken": "^9.0.3",
+    "mysql2": "^3.22.3",
+    "web-push": "^3.6.7"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/node": "^25.3.3",
+    "@types/web-push": "^3.6.4",
+    "esbuild": "^0.27.3",
+    "typescript": "^5.9.2"
+  }
+}

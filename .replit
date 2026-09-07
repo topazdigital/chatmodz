@@ -1,0 +1,18 @@
+modules = ["nodejs-20", "web", "bash"]
+
+[workflows]
+runButton = "Chatmodz"
+
+[[workflows.workflow]]
+name = "Chatmodz"
+mode = "sequential"
+author = "chatmodz"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "pnpm --filter @workspace/chatmodz run dev"
+waitForPort = 25549
+
+[[ports]]
+localPort = 25549
+externalPort = 80

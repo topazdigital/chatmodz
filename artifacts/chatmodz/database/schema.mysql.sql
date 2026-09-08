@@ -75,6 +75,8 @@ CREATE TABLE IF NOT EXISTS conversations (
   member_alias VARCHAR(160) NOT NULL,
   managed_profile_alias VARCHAR(160) NOT NULL,
   managed_profile_external_id VARCHAR(255) NULL,
+  member_photo_url VARCHAR(500) NULL,
+  managed_profile_photo_url VARCHAR(500) NULL,
   priority ENUM('normal', 'high', 'urgent') NOT NULL DEFAULT 'normal',
   status ENUM('open', 'waiting', 'closed') NOT NULL DEFAULT 'open',
   assigned_operator_id BIGINT UNSIGNED NULL,

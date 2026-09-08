@@ -222,21 +222,34 @@ function Toast({ message }: { message: string }) {
 
 function LandingPage() {
   return <div className="landing-page">
-    <header className="landing-nav"><Logo /><div className="landing-nav-actions"><Link href="/apply" className="button ghost">Apply to operate</Link><Link href="/login" className="button primary"><LogIn size={14} /> Operator sign in</Link></div></header>
+    <header className="landing-nav">
+      <Logo />
+      <nav className="landing-links" aria-label="Main navigation">
+        <a href="#approach">Our approach</a>
+        <a href="#capabilities">Capabilities</a>
+        <a href="#contact">Contact</a>
+      </nav>
+      <div className="landing-nav-actions"><Link href="/login" className="button primary"><LogIn size={14} /> Team sign in</Link></div>
+    </header>
     <main className="landing-main">
       <section className="landing-hero">
-        <div className="eyebrow">Private conversation operations</div>
-        <h1>Better conversations.<br /><em>One focused desk.</em></h1>
-        <p>Chatmodz gives trained conversation operators a secure, distraction-free workspace for thoughtful replies across connected dating communities.</p>
-        <div className="landing-actions"><Link href="/login" className="button amber">Open operator desk <ChevronRight size={15} /></Link><span className="landing-note"><ShieldCheck size={14} /> Source identities stay hidden from operators</span></div>
+        <div className="eyebrow">People-first digital operations</div>
+        <h1>Communication that feels <em>human.</em></h1>
+        <p>We help digital businesses create more thoughtful, timely, and consistent customer conversations through a careful blend of people, process, and technology.</p>
+        <div className="landing-actions"><a href="#approach" className="button amber">Discover our approach <ChevronRight size={15} /></a><span className="landing-note"><ShieldCheck size={14} /> Built around privacy and accountability</span></div>
       </section>
-      <section className="landing-grid">
-        <article><div className="landing-icon"><Inbox size={18} /></div><h2>One live queue</h2><p>See only the conversations that need attention, with real member and managed-profile context.</p></article>
-        <article><div className="landing-icon teal-icon"><LockKeyhole size={18} /></div><h2>Protected by design</h2><p>Conversation locks, short sessions, audit trails, and role-based access keep the desk accountable.</p></article>
-        <article><div className="landing-icon"><Activity size={18} /></div><h2>Delivery you can trust</h2><p>Replies, media, notifications, and delivery activity are handled through authenticated site adapters.</p></article>
+      <section className="landing-statement" id="approach">
+        <div><div className="eyebrow">A better way to stay connected</div><h2>Reliable support for every conversation.</h2></div>
+        <p>Our teams bring clarity and care to busy digital environments. Every interaction is handled with the context, consistency, and respect it deserves.</p>
       </section>
+      <section className="landing-grid" id="capabilities">
+        <article><div className="landing-icon"><MessageSquare size={18} /></div><h2>Thoughtful communication</h2><p>Warm, clear, and on-brand responses that help people feel heard instead of processed.</p></article>
+        <article><div className="landing-icon teal-icon"><LockKeyhole size={18} /></div><h2>Responsible operations</h2><p>Clear access controls, accountable workflows, and privacy-conscious handling at every step.</p></article>
+        <article><div className="landing-icon"><Activity size={18} /></div><h2>Consistent quality</h2><p>Practical systems that help teams respond quickly while keeping standards high.</p></article>
+      </section>
+      <section className="landing-contact" id="contact"><div><div className="eyebrow">Let’s talk</div><h2>Looking for a more considered way to support your community?</h2></div><a className="button primary" href="mailto:hello@chatmodz.com">Start a conversation <ChevronRight size={15} /></a></section>
     </main>
-    <footer className="landing-footer"><span>Chatmodz operations desk</span><span>Built for privacy, clarity, and consistency.</span></footer>
+    <footer className="landing-footer"><span>Chatmodz</span><span>People, process, and technology in conversation.</span></footer>
   </div>;
 }
 

@@ -1,18 +1,43 @@
-modules = ["nodejs-20", "web", "bash"]
+modules = ["nodejs-20", "web"]
 
 [workflows]
-runButton = "Chatmodz"
+runButton = "Project"
 
 [[workflows.workflow]]
 name = "Chatmodz"
 mode = "sequential"
-author = "chatmodz"
+author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "pnpm --filter @workspace/chatmodz run dev"
+args = "pnpm --filter @workspace/chatmodz-api run dev & pnpm --filter @workspace/chatmodz run dev"
 waitForPort = 25549
+
+[workflows.workflow.metadata]
+outputType = "webview"
+
+[[workflows.workflow]]
+name = "Project"
+mode = "parallel"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Chatmodz"
+
+[[ports]]
+localPort = 8080
+externalPort = 8080
 
 [[ports]]
 localPort = 25549
 externalPort = 80
+
+[nix]
+channel = "stable-25_05"
+
+[userenv]
+
+[userenv.shared]
+CHATMODZ_ADMIN_EMAIL = "patrickndungu.pnn@gmail.com"
+CHATMODZ_ADMIN_NAME = "Patrick Ndungu"

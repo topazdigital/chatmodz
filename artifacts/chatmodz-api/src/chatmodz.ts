@@ -36,6 +36,35 @@ function database() {
   return pool
 }
 
+async function ensureBootstrapAdmin() {
+  const email = String(process.env.CHATMODZ_ADMIN_EMAIL || "").trim().toLowerCase()
+  const password = String(process.env.CHATMODZ_ADMIN_PASSWORD || "")
+  if (!email || !password) return
+  if (!email.includes("@") || password.length < 10) throw new Error("CHATMODZ_ADMIN_EMAIL must be valid and CHATMODZ_ADMIN_PASSWORD must be at least 10 characters")
+  const name = String(process.env.CHATMODZ_ADMIN_NAME || "Chatmodz Administrator").trim() || "Chatmodz Administrator"
+  const passwordHash = await bcrypt.hash(password, 12)
+  const existing = await query<any>("SELECT id FROM operators WHERE email = ? LIMIT 1", [email])
+  if (existing[0]) {
+    await query("UPDATE operators SET full_name = ?, password_hash = ?, role = 'admin', status = 'active' WHERE id = ?", [name, passwordHash, existing[0].id])
+    console.log("Chatmodz bootstrap administrator updated")
+    return
+  }
+  await query(
+    "INSERT INTO operators (public_id, full_name, email, password_hash, role, status) VALUES (?, ?, ?, ?, 'admin', 'active')",
+    [crypto.randomBytes(13).toString("base64url"), name, email, passwordHash],
+  )
+  console.log("Chatmodz bootstrap administrator created")
+}
+
+export async function initializeChatmodz() {
+  if (!process.env.CHATMODZ_ADMIN_EMAIL || !process.env.CHATMODZ_ADMIN_PASSWORD) return
+  try {
+    await ensureBootstrapAdmin()
+  } catch (error) {
+    console.error("Chatmodz bootstrap administrator was not provisioned:", error instanceof Error ? error.message : error)
+  }
+}
+
 async function query<T = any>(sql: string, values: unknown[] = []): Promise<T[]> {
   const [rows] = await database().execute(sql, values)
   return rows as T[]

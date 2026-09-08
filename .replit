@@ -18,3 +18,6 @@ channel = "stable-25_05"
 [userenv.shared]
 CHATMODZ_ADMIN_EMAIL = "patrickndungu.pnn@gmail.com"
 CHATMODZ_ADMIN_NAME = "Patrick Ndungu"
+
+[userenv.development]
+CHATMODZ_DEMO_MODE = "true"

@@ -28,12 +28,34 @@ declare global {
 }
 
 let pool: Pool | null = null
+const demoApplications: any[] = []
 
 function database() {
   const url = process.env.CHATMODZ_DATABASE_URL
   if (!url) throw new Error("Chatmodz is not configured: CHATMODZ_DATABASE_URL is required")
   if (!pool) pool = createPool({ uri: url, waitForConnections: true, connectionLimit: 10, charset: "utf8mb4" })
   return pool
+}
+
+function isDemoMode() {
+  return process.env.CHATMODZ_DEMO_MODE === "true" && process.env.NODE_ENV !== "production"
+}
+
+function demoOperator(): Operator {
+  return {
+    id: 1,
+    public_id: "demo-admin",
+    full_name: String(process.env.CHATMODZ_ADMIN_NAME || "Patrick Ndungu"),
+    email: String(process.env.CHATMODZ_ADMIN_EMAIL || "").trim().toLowerCase(),
+    role: "admin",
+    status: "active",
+  }
+}
+
+function timingSafeEqualText(left: string, right: string) {
+  const a = Buffer.from(left)
+  const b = Buffer.from(right)
+  return a.length === b.length && crypto.timingSafeEqual(a, b)
 }
 
 async function ensureBootstrapAdmin() {
@@ -57,6 +79,10 @@ async function ensureBootstrapAdmin() {
 }
 
 export async function initializeChatmodz() {
+  if (isDemoMode()) {
+    console.log("Chatmodz development demo mode enabled; MySQL persistence is disabled")
+    return
+  }
   if (!process.env.CHATMODZ_ADMIN_EMAIL || !process.env.CHATMODZ_ADMIN_PASSWORD) return
   try {
     await ensureBootstrapAdmin()
@@ -163,10 +189,10 @@ async function requireChatmodzAuth(req: Request, res: Response, next: NextFuncti
     const header = req.header("Authorization") || ""
     if (!header.startsWith("Bearer ")) return res.status(401).json({ error: "Unauthorized" })
     const payload = jwt.verify(header.slice(7), jwtSecret(), { issuer: "chatmodz" }) as jwt.JwtPayload
-    const operator = await loadOperator(Number(payload.operatorId))
+    const operator = isDemoMode() ? demoOperator() : await loadOperator(Number(payload.operatorId))
     if (!operator || operator.status !== "active") return res.status(401).json({ error: "Session is no longer active" })
     req.chatmodzOperator = operator
-    await query("UPDATE operators SET last_active_at = NOW() WHERE id = ?", [operator.id])
+    if (!isDemoMode()) await query("UPDATE operators SET last_active_at = NOW() WHERE id = ?", [operator.id])
     next()
   } catch (error) {
     if (failConfiguration(res, error)) return
@@ -241,6 +267,7 @@ async function deliverReply(site: any, payload: Record<string, string>) {
 }
 
 router.get("/health", async (_req, res) => {
+  if (isDemoMode()) return res.json({ ok: true, database: "demo" })
   try {
     await query("SELECT 1 AS ok")
     res.json({ ok: true, database: "connected" })
@@ -254,6 +281,19 @@ router.post("/applications", async (req, res) => {
   const { fullName, email, location, experience } = req.body || {}
   if (!String(fullName || "").trim() || !String(email || "").includes("@")) {
     return res.status(400).json({ error: "Full name and a valid email are required" })
+  }
+  if (isDemoMode()) {
+    const application = {
+      id: demoApplications.length + 1,
+      full_name: String(fullName).trim(),
+      email: String(email).trim().toLowerCase(),
+      location: String(location || "").trim(),
+      experience: String(experience || "").trim(),
+      status: "pending",
+      created_at: new Date().toISOString(),
+    }
+    demoApplications.push(application)
+    return res.status(201).json({ submitted: true, demo: true })
   }
   try {
     await query(
@@ -272,6 +312,15 @@ router.post("/auth/login", async (req, res) => {
   const identifier = String(req.body?.identifier || req.body?.email || "").trim().toLowerCase()
   const password = String(req.body?.password || "")
   if (!identifier || !password) return res.status(400).json({ error: "Email and password are required" })
+  if (isDemoMode()) {
+    const configuredEmail = String(process.env.CHATMODZ_ADMIN_EMAIL || "").trim().toLowerCase()
+    const configuredPassword = String(process.env.CHATMODZ_ADMIN_PASSWORD || "")
+    if (!configuredEmail || !configuredPassword || identifier !== configuredEmail || !timingSafeEqualText(password, configuredPassword)) {
+      return res.status(401).json({ error: "Invalid demo credentials" })
+    }
+    const operator = demoOperator()
+    return res.json({ token: tokenFor(operator), user: publicOperator(operator), demo: true })
+  }
   try {
     const rows = await query<any>("SELECT * FROM operators WHERE email = ? LIMIT 1", [identifier])
     const operator = rows[0]
@@ -314,6 +363,7 @@ router.get("/auth/me", requireChatmodzAuth, (req, res) => res.json(publicOperato
 router.post("/auth/logout", requireChatmodzAuth, (_req, res) => res.json({ success: true }))
 
 router.get("/conversations", requireChatmodzAuth, async (req, res) => {
+  if (isDemoMode()) return res.json({ conversations: [], total: 0, page: 1, pages: 1, demo: true })
   try {
     const rows = await query<any>(`
       SELECT c.*,
@@ -457,6 +507,7 @@ router.post("/conversations/:key/reply", requireChatmodzAuth, async (req, res) =
 })
 
 router.get("/stats", requireChatmodzAuth, async (req, res) => {
+  if (isDemoMode()) return res.json({ activeLocks: 0, totalConversations: 0, messagesSent: 0, demo: true })
   try {
     const [conversation] = await query<any>("SELECT COUNT(*) AS total FROM conversations WHERE status <> 'closed'")
     const [locks] = await query<any>("SELECT COUNT(*) AS total FROM conversations WHERE assigned_operator_id IS NOT NULL AND lock_expires_at > NOW()")
@@ -527,6 +578,7 @@ router.post("/integrations/:siteKey/messages", async (req, res) => {
 })
 
 router.get("/admin/applications", requireChatmodzAuth, requireChatmodzAdmin, async (_req, res) => {
+  if (isDemoMode()) return res.json({ applications: demoApplications, demo: true })
   try { res.json({ applications: await query("SELECT id, full_name, email, location, experience, status, created_at, reviewed_at FROM operator_applications ORDER BY created_at DESC LIMIT 200") }) }
   catch (error) { if (!failConfiguration(res, error)) res.status(500).json({ error: "Applications unavailable" }) }
 })
@@ -563,6 +615,7 @@ router.post("/admin/applications/:id/reject", requireChatmodzAuth, requireChatmo
 })
 
 router.get("/admin/operators", requireChatmodzAuth, requireChatmodzAdmin, async (_req, res) => {
+  if (isDemoMode()) return res.json({ operators: [{ id: 1, public_id: "demo-admin", full_name: demoOperator().full_name, email: demoOperator().email, role: "admin", status: "active", last_active_at: new Date().toISOString(), created_at: new Date().toISOString() }], demo: true })
   try { res.json({ operators: await query("SELECT id, public_id, full_name, email, role, status, last_active_at, created_at FROM operators ORDER BY created_at DESC") }) }
   catch (error) { if (!failConfiguration(res, error)) res.status(500).json({ error: "Operators unavailable" }) }
 })
@@ -575,6 +628,7 @@ router.post("/admin/operators/:id/status", requireChatmodzAuth, requireChatmodzA
 })
 
 router.get("/admin/sites", requireChatmodzAuth, requireChatmodzAdmin, async (_req, res) => {
+  if (isDemoMode()) return res.json({ sites: [], demo: true })
   try { res.json({ sites: await query("SELECT id, internal_name, display_name, status, integration_type, endpoint_base_url, secret_env_key, created_at, updated_at FROM sites ORDER BY created_at DESC") }) }
   catch (error) { if (!failConfiguration(res, error)) res.status(500).json({ error: "Sites unavailable" }) }
 })
@@ -600,6 +654,7 @@ router.post("/admin/sites/:id/status", requireChatmodzAuth, requireChatmodzAdmin
 })
 
 router.get("/admin/report", requireChatmodzAuth, requireChatmodzAdmin, async (_req, res) => {
+  if (isDemoMode()) return res.json({ summary: { conversations: 0, replies: 0, failed_deliveries: 0 }, byOperator: [{ id: 1, name: demoOperator().full_name, replies: 0 }], bySite: [], demo: true })
   try {
     const [summary] = await query<any>("SELECT COUNT(DISTINCT c.id) AS conversations, COUNT(DISTINCT CASE WHEN m.sender_type = 'managed_profile' THEN m.id END) AS replies, SUM(CASE WHEN d.status = 'failed' THEN 1 ELSE 0 END) AS failed_deliveries FROM conversations c LEFT JOIN messages m ON m.conversation_id = c.id LEFT JOIN integration_deliveries d ON d.conversation_id = c.id")
     const byOperator = await query("SELECT o.id, o.full_name AS name, COUNT(m.id) AS replies FROM operators o LEFT JOIN messages m ON m.sent_by_operator_id = o.id GROUP BY o.id, o.full_name ORDER BY replies DESC")

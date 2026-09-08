@@ -1,0 +1,1 @@
+- [Imported workspace validation](imported-workspace-validation.md) — verify package references and shared configs immediately after import, before relying on the generated run workflow.

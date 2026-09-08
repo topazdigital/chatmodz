@@ -1,29 +1,6 @@
 modules = ["nodejs-20", "web"]
 
 [workflows]
-runButton = "Project"
-
-[[workflows.workflow]]
-name = "Chatmodz"
-mode = "sequential"
-author = "agent"
-
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "pnpm --filter @workspace/chatmodz-api run dev & pnpm --filter @workspace/chatmodz run dev"
-waitForPort = 25549
-
-[workflows.workflow.metadata]
-outputType = "webview"
-
-[[workflows.workflow]]
-name = "Project"
-mode = "parallel"
-author = "agent"
-
-[[workflows.workflow.tasks]]
-task = "workflow.run"
-args = "Chatmodz"
 
 [[ports]]
 localPort = 8080

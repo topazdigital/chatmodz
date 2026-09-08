@@ -225,29 +225,29 @@ function LandingPage() {
     <header className="landing-nav">
       <Logo />
       <nav className="landing-links" aria-label="Main navigation">
-        <a href="#approach">Our approach</a>
-        <a href="#capabilities">Capabilities</a>
-        <a href="#contact">Contact</a>
+        <a href="#approach">How it works</a>
+        <a href="#capabilities">For operators</a>
+        <a href="#contact">Join us</a>
       </nav>
-      <div className="landing-nav-actions"><Link href="/login" className="button primary"><LogIn size={14} /> Team sign in</Link></div>
+      <div className="landing-nav-actions"><Link href="/apply" className="button ghost">Apply to operate</Link><Link href="/login" className="button primary"><LogIn size={14} /> Operator login</Link></div>
     </header>
     <main className="landing-main">
       <section className="landing-hero">
-        <div className="eyebrow">People-first digital operations</div>
-        <h1>Communication that feels <em>human.</em></h1>
-        <p>We help digital businesses create more thoughtful, timely, and consistent customer conversations through a careful blend of people, process, and technology.</p>
-        <div className="landing-actions"><a href="#approach" className="button amber">Discover our approach <ChevronRight size={15} /></a><span className="landing-note"><ShieldCheck size={14} /> Built around privacy and accountability</span></div>
+        <div className="eyebrow">Private chat operations workspace</div>
+        <h1>Good conversations start with <em>good operators.</em></h1>
+        <p>We give our chat operators a focused place to listen, respond naturally, and keep conversations moving — without the noise of a dozen browser tabs.</p>
+        <div className="landing-actions"><Link href="/login" className="button amber">Enter the operator desk <ChevronRight size={15} /></Link><span className="landing-note"><ShieldCheck size={14} /> Secure access for approved operators</span></div>
       </section>
       <section className="landing-statement" id="approach">
-        <div><div className="eyebrow">A better way to stay connected</div><h2>Reliable support for every conversation.</h2></div>
-        <p>Our teams bring clarity and care to busy digital environments. Every interaction is handled with the context, consistency, and respect it deserves.</p>
+        <div><div className="eyebrow">The work behind the conversation</div><h2>Listen well. Reply naturally. Keep it moving.</h2></div>
+        <p>Every conversation deserves attention. Our operators work from one calm, accountable workspace designed to make thoughtful replies easier to deliver.</p>
       </section>
       <section className="landing-grid" id="capabilities">
-        <article><div className="landing-icon"><MessageSquare size={18} /></div><h2>Thoughtful communication</h2><p>Warm, clear, and on-brand responses that help people feel heard instead of processed.</p></article>
-        <article><div className="landing-icon teal-icon"><LockKeyhole size={18} /></div><h2>Responsible operations</h2><p>Clear access controls, accountable workflows, and privacy-conscious handling at every step.</p></article>
-        <article><div className="landing-icon"><Activity size={18} /></div><h2>Consistent quality</h2><p>Practical systems that help teams respond quickly while keeping standards high.</p></article>
+        <article><div className="landing-icon"><MessageSquare size={18} /></div><h2>Focus on the person</h2><p>See the context you need to write warm, clear replies that feel personal and considered.</p></article>
+        <article><div className="landing-icon teal-icon"><LockKeyhole size={18} /></div><h2>Work with confidence</h2><p>Clear assignments, protected access, and simple guardrails keep every shift focused and accountable.</p></article>
+        <article><div className="landing-icon"><Activity size={18} /></div><h2>Make every reply count</h2><p>Stay on top of the conversations waiting for you and build momentum one good reply at a time.</p></article>
       </section>
-      <section className="landing-contact" id="contact"><div><div className="eyebrow">Let’s talk</div><h2>Looking for a more considered way to support your community?</h2></div><a className="button primary" href="mailto:hello@chatmodz.com">Start a conversation <ChevronRight size={15} /></a></section>
+      <section className="landing-contact" id="contact"><div><div className="eyebrow">Work with us</div><h2>Have the patience, empathy, and words to make a conversation better?</h2></div><Link className="button primary" href="/apply">Apply to operate <ChevronRight size={15} /></Link></section>
     </main>
     <footer className="landing-footer"><span>Chatmodz</span><span>People, process, and technology in conversation.</span></footer>
   </div>;

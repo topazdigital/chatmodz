@@ -59,9 +59,17 @@ function useSession() {
 function storedAuth(): { user: AuthUser | null; token: string | null } {
   try {
     const value = localStorage.getItem("chatmodz_auth");
-    if (value) return JSON.parse(value);
+    if (!value) return { user: null, token: null };
+    const parsed = JSON.parse(value);
+    if (!parsed || typeof parsed !== "object") throw new Error("Invalid stored session");
+    const token = typeof parsed.token === "string" && parsed.token.trim() ? parsed.token : null;
+    const candidate = parsed.user;
+    const user = candidate && typeof candidate === "object" && typeof candidate.id === "number"
+      ? candidate as AuthUser
+      : null;
+    return { user, token };
   } catch {
-    // A missing browser storage should not prevent the login page from rendering.
+    localStorage.removeItem("chatmodz_auth");
   }
   return { user: null, token: null };
 }
@@ -77,7 +85,7 @@ function useAuthState(): AuthState & { login: (identifier: string, password: str
     fetch("/api/chatmodz/auth/me", { headers: { Authorization: `Bearer ${initial.token}` } })
       .then((response) => response.ok ? response.json() : null)
       .then((freshUser) => {
-        if (freshUser) {
+        if (freshUser && typeof freshUser.id === "number") {
           setUser(freshUser);
           localStorage.setItem("chatmodz_auth", JSON.stringify({ user: freshUser, token: initial.token }));
         } else {
@@ -86,7 +94,11 @@ function useAuthState(): AuthState & { login: (identifier: string, password: str
           setToken(null);
         }
       })
-      .catch(() => undefined)
+      .catch(() => {
+        localStorage.removeItem("chatmodz_auth");
+        setUser(null);
+        setToken(null);
+      })
       .finally(() => setLoading(false));
   }, [initial.token]);
 
@@ -98,6 +110,7 @@ function useAuthState(): AuthState & { login: (identifier: string, password: str
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(data.error || "Unable to sign in");
+    if (!data.token || !data.user || typeof data.user.id !== "number") throw new Error("The login response was incomplete. Please try again.");
     setUser(data.user);
     setToken(data.token);
     localStorage.setItem("chatmodz_auth", JSON.stringify({ user: data.user, token: data.token }));
@@ -280,6 +293,7 @@ function LoginPage() {
       <div className="eyebrow">Secure operator access</div>
       <h1>Welcome back.</h1>
       <p>Sign in with the credentials issued by your operations administrator.</p>
+      {import.meta.env.DEV && <div className="notice" style={{ marginBottom: 18 }}><ShieldCheck size={13} /> Replit demo: use the configured administrator credentials, or sign in as <strong>operator@chatmodz.test</strong> with the same development password to preview the queue-only operator role.</div>}
       <form onSubmit={submit} className="auth-form">
         <label htmlFor="identifier">Operator email</label>
         <input id="identifier" className="form-field" value={identifier} onChange={(event) => setIdentifier(event.target.value)} autoComplete="username" required />

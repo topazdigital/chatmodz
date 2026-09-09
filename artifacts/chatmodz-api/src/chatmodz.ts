@@ -41,13 +41,16 @@ function isDemoMode() {
   return process.env.CHATMODZ_DEMO_MODE === "true" && process.env.NODE_ENV !== "production"
 }
 
-function demoOperator(): Operator {
+function demoOperator(role: "admin" | "operator" = "admin"): Operator {
+  const isAdmin = role === "admin"
   return {
-    id: 1,
-    public_id: "demo-admin",
-    full_name: String(process.env.CHATMODZ_ADMIN_NAME || "Patrick Ndungu"),
-    email: String(process.env.CHATMODZ_ADMIN_EMAIL || "").trim().toLowerCase(),
-    role: "admin",
+    id: isAdmin ? 1 : 2,
+    public_id: isAdmin ? "demo-admin" : "demo-operator",
+    full_name: isAdmin ? String(process.env.CHATMODZ_ADMIN_NAME || "Patrick Ndungu") : "Demo Operator",
+    email: isAdmin
+      ? String(process.env.CHATMODZ_ADMIN_EMAIL || "").trim().toLowerCase()
+      : String(process.env.CHATMODZ_DEMO_OPERATOR_EMAIL || "operator@chatmodz.test").trim().toLowerCase(),
+    role,
     status: "active",
   }
 }
@@ -189,7 +192,9 @@ async function requireChatmodzAuth(req: Request, res: Response, next: NextFuncti
     const header = req.header("Authorization") || ""
     if (!header.startsWith("Bearer ")) return res.status(401).json({ error: "Unauthorized" })
     const payload = jwt.verify(header.slice(7), jwtSecret(), { issuer: "chatmodz" }) as jwt.JwtPayload
-    const operator = isDemoMode() ? demoOperator() : await loadOperator(Number(payload.operatorId))
+    const operator = isDemoMode()
+      ? demoOperator(payload.role === "operator" ? "operator" : "admin")
+      : await loadOperator(Number(payload.operatorId))
     if (!operator || operator.status !== "active") return res.status(401).json({ error: "Session is no longer active" })
     req.chatmodzOperator = operator
     if (!isDemoMode()) await query("UPDATE operators SET last_active_at = NOW() WHERE id = ?", [operator.id])
@@ -315,10 +320,16 @@ router.post("/auth/login", async (req, res) => {
   if (isDemoMode()) {
     const configuredEmail = String(process.env.CHATMODZ_ADMIN_EMAIL || "").trim().toLowerCase()
     const configuredPassword = String(process.env.CHATMODZ_ADMIN_PASSWORD || "")
-    if (!configuredEmail || !configuredPassword || identifier !== configuredEmail || !timingSafeEqualText(password, configuredPassword)) {
+    const operatorEmail = String(process.env.CHATMODZ_DEMO_OPERATOR_EMAIL || "operator@chatmodz.test").trim().toLowerCase()
+    if (!configuredPassword || !timingSafeEqualText(password, configuredPassword)) {
       return res.status(401).json({ error: "Invalid demo credentials" })
     }
-    const operator = demoOperator()
+    const operator = identifier === configuredEmail
+      ? demoOperator("admin")
+      : identifier === operatorEmail
+        ? demoOperator("operator")
+        : null
+    if (!operator) return res.status(401).json({ error: "Invalid demo credentials" })
     return res.json({ token: tokenFor(operator), user: publicOperator(operator), demo: true })
   }
   try {

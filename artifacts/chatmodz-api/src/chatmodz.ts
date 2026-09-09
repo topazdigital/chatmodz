@@ -1065,8 +1065,10 @@ router.get("/admin/sites", requireChatmodzAuth, requireChatmodzAdmin, async (_re
 router.post("/admin/sites", requireChatmodzAuth, requireChatmodzAdmin, async (req, res) => {
   const { internalName, displayName, endpointBaseUrl, secretEnvKey, integrationType = "hybrid" } = req.body || {}
   if (!/^[a-z0-9_-]{2,120}$/.test(String(internalName || "")) || !String(displayName || "").trim() || !/^[A-Z_][A-Z0-9_]*$/.test(String(secretEnvKey || ""))) return res.status(400).json({ error: "Internal name, display name, and an uppercase secret environment key are required" })
+  if (!["webhook", "api", "hybrid"].includes(String(integrationType))) return res.status(400).json({ error: "Invalid integration type" })
   try {
     const configuredSecret = process.env[String(secretEnvKey)] || ""
+    if (!configuredSecret) return res.status(400).json({ error: `Environment secret ${secretEnvKey} is not configured` })
     await query("INSERT INTO sites (internal_name, display_name, endpoint_base_url, secret_env_key, signing_secret_hash, integration_type) VALUES (?, ?, ?, ?, ?, ?)", [internalName, displayName.trim(), String(endpointBaseUrl || "").trim() || null, secretEnvKey, configuredSecret ? sha256(configuredSecret) : null, integrationType])
     res.status(201).json({ created: true })
   } catch (error: any) {

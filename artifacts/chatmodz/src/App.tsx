@@ -1,4 +1,4 @@
-import { type ChangeEvent, type CSSProperties, type ReactNode, createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { type ChangeEvent, type CSSProperties, type FormEvent, type ReactNode, createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { Link, Route, Switch, useLocation, useParams } from "wouter";
 import {
   Activity,
@@ -704,6 +704,104 @@ function money(minor: number | null | undefined, currency = "EUR") {
   return new Intl.NumberFormat(undefined, { style: "currency", currency }).format(Number(minor || 0) / 100);
 }
 
+type SiteAction = (url: string, method?: string, body?: unknown) => Promise<unknown>;
+
+function SiteManagementPanel({ sites, action, load, setNotice }: { sites: any[]; action: SiteAction; load: () => Promise<void>; setNotice: (message: string) => void }) {
+  const [draft, setDraft] = useState({ internalName: "", displayName: "", endpointBaseUrl: "", secretEnvKey: "", integrationType: "hybrid" });
+  const [saving, setSaving] = useState(false);
+
+  const saveSite = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setSaving(true);
+    try {
+      await action("/api/chatmodz/admin/sites", "POST", draft);
+      setDraft({ internalName: "", displayName: "", endpointBaseUrl: "", secretEnvKey: "", integrationType: "hybrid" });
+      setNotice("Connected site added");
+      await load();
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Site could not be added");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const updateStatus = async (id: number, status: string) => {
+    try {
+      await action(`/api/chatmodz/admin/sites/${id}/status`, "POST", { status });
+      setNotice("Site status updated");
+      await load();
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Site status could not be updated");
+    }
+  };
+
+  return <>
+    <section className="panel">
+      <div className="panel-head">
+        <div>
+          <div className="panel-title">Add connected site</div>
+          <div className="panel-kicker">The signing secret must already exist in the API environment</div>
+        </div>
+      </div>
+      <form className="form-grid" onSubmit={saveSite}>
+        <div className="form-group">
+          <label htmlFor="site-internal-name">Internal name</label>
+          <input id="site-internal-name" className="form-field" value={draft.internalName} onChange={(event) => setDraft({ ...draft, internalName: event.target.value.toLowerCase() })} placeholder="site_one" pattern="[a-z0-9_-]{2,120}" required />
+          <small>Lowercase letters, numbers, underscores, or hyphens.</small>
+        </div>
+        <div className="form-group">
+          <label htmlFor="site-display-name">Display name</label>
+          <input id="site-display-name" className="form-field" value={draft.displayName} onChange={(event) => setDraft({ ...draft, displayName: event.target.value })} placeholder="Site One" required />
+        </div>
+        <div className="form-group">
+          <label htmlFor="site-secret-key">Secret environment key</label>
+          <input id="site-secret-key" className="form-field mono" value={draft.secretEnvKey} onChange={(event) => setDraft({ ...draft, secretEnvKey: event.target.value.toUpperCase() })} placeholder="SITE_ONE_SECRET" pattern="[A-Z_][A-Z0-9_]*" required />
+          <small>Add this exact key to <code>.env.production</code> before saving.</small>
+        </div>
+        <div className="form-group">
+          <label htmlFor="site-endpoint">Reply endpoint URL</label>
+          <input id="site-endpoint" className="form-field" type="url" value={draft.endpointBaseUrl} onChange={(event) => setDraft({ ...draft, endpointBaseUrl: event.target.value })} placeholder="https://site.example.com/chatmodz/replies" />
+          <small>Leave blank for inbound-only integrations.</small>
+        </div>
+        <div className="form-group">
+          <label htmlFor="site-integration-type">Integration type</label>
+          <select id="site-integration-type" className="form-field" value={draft.integrationType} onChange={(event) => setDraft({ ...draft, integrationType: event.target.value })}>
+            <option value="hybrid">Hybrid</option>
+            <option value="webhook">Webhook</option>
+            <option value="api">API</option>
+          </select>
+        </div>
+        <div className="form-group full">
+          <small>After creation, configure the site adapter to send signed messages to <code>/api/chatmodz/integrations/{`{siteKey}`}/messages</code>. The adapter is what makes live conversations appear in the queue.</small>
+        </div>
+        <div className="inline-actions full">
+          <button className="button amber compact" type="submit" disabled={saving}>{saving ? "Adding…" : "Add connected site"}</button>
+        </div>
+      </form>
+    </section>
+    <section className="panel">
+      <div className="panel-head">
+        <div>
+          <div className="panel-title">Connected sites</div>
+          <div className="panel-kicker">Secrets remain in environment configuration; only the key name is shown</div>
+        </div>
+      </div>
+      <div className="table-wrap">
+        <table className="data-table">
+          <thead><tr><th>Site</th><th>Endpoint</th><th>Secret env key</th><th>Status</th><th>Action</th></tr></thead>
+          <tbody>{sites.length ? sites.map((site) => <tr key={site.id}>
+            <td><strong>{site.display_name}</strong><br /><span className="tiny-text mono">{site.internal_name}</span></td>
+            <td className="table-long">{site.endpoint_base_url || "Inbound only"}</td>
+            <td className="mono">{site.secret_env_key || "—"}</td>
+            <td><StatusPill type={site.status === "active" ? "active" : "pending"}>{site.status}</StatusPill></td>
+            <td><select className="form-field compact-select" value={site.status} onChange={(event) => updateStatus(site.id, event.target.value)}><option value="active">Active</option><option value="paused">Paused</option><option value="disconnected">Disconnected</option></select></td>
+          </tr>) : <tr><td colSpan={5}>No connected sites have been added yet.</td></tr>}</tbody>
+        </table>
+      </div>
+    </section>
+  </>;
+}
+
 function AdminPage() {
   const { token, user } = useSession();
   const [tab, setTab] = useState<"applications" | "operators" | "sites" | "report" | "compensation">("applications");
@@ -743,6 +841,7 @@ function AdminPage() {
     if (!response.ok) throw new Error(result.error || "Action failed");
     return result;
   };
+  if ((tab as string) === "sites") return <Shell><div className="page"><div className="page-head"><div><div className="eyebrow">Administrator control room</div><h1 className="page-title">Operations admin</h1><p className="page-subtitle">Applications, operators, connected sites, delivery health, attribution, and operator earnings.</p></div><button className="button ghost compact" onClick={load}><RefreshCw size={13} /> Refresh</button></div><div className="admin-tabs">{(["applications", "operators", "sites", "report", "compensation"] as const).map((item) => <button key={item} className={`filter-button ${tab === item ? "selected" : ""}`} onClick={() => setTab(item)}>{item === "applications" ? "Applications" : item === "operators" ? "Operators" : item === "sites" ? "Connected sites" : item === "report" ? "Reporting" : <><DollarSign size={13} /> Pay &amp; levels</>}</button>)}</div><SiteManagementPanel sites={data.sites} action={action} load={load} setNotice={setNotice} /><Toast message={notice} /></div></Shell>;
   const approve = async (id: number) => {
     try {
       const result = await action(`/api/chatmodz/admin/applications/${id}/approve`);

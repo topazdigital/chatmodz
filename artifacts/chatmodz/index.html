@@ -19,6 +19,19 @@
   </head>
   <body>
     <div id="root"></div>
+    <script>
+      // Replit preview recovery: clear a stale demo session before React loads.
+      if (new URLSearchParams(window.location.search).has("reset_session")) {
+        try {
+          localStorage.removeItem("chatmodz_auth");
+        } catch {
+          // Ignore storage restrictions; the login page can still render.
+        }
+        const cleanUrl = new URL(window.location.href);
+        cleanUrl.searchParams.delete("reset_session");
+        window.history.replaceState({}, "", cleanUrl.pathname + cleanUrl.search + cleanUrl.hash);
+      }
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

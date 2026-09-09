@@ -1,0 +1,48 @@
+[root@mail chatmodz]# sudo -u admin -H bash -lc '
+cd /home/admin/apps/chatmodz &&
+git pull --ff-only origin main &&
+pnpm --filter @workspace/chatmodz run build &&
+pnpm --filter @workspace/chatmodz-api run build
+'
+remote: Enumerating objects: 23, done.
+remote: Counting objects: 100% (23/23), done.
+remote: Compressing objects: 100% (9/9), done.
+remote: Total 16 (delta 6), reused 16 (delta 6), pack-reused 0 (from 0)
+Unpacking objects: 100% (16/16), 1.47 MiB | 5.78 MiB/s, done.
+From https://github.com/topazdigital/chatmodz
+ * branch            main       -> FETCH_HEAD
+   77dbfa9..819a577  main       -> origin/main
+Updating 77dbfa9..819a577
+Fast-forward
+ artifacts/chatmodz/public/.htaccess     |  13 +++++++++++++
+ artifacts/chatmodz/vite.config.ts       |  19 +++++--------------
+ attached_assets/image_1788943333070.png | Bin 0 -> 214699 bytes
+ attached_assets/image_1788943352809.png | Bin 0 -> 320829 bytes
+ attached_assets/image_1788943366795.png | Bin 0 -> 250595 bytes
+ attached_assets/image_1788943413925.png | Bin 0 -> 269831 bytes
+ attached_assets/image_1788943440055.png | Bin 0 -> 547714 bytes
+ replit.md                               |  46 ++++++++++++++++++++++++++++++++++++++++++++++
+ screenshots/chatmodz-preview.jpg        | Bin 0 -> 58837 bytes
+ 9 files changed, 64 insertions(+), 14 deletions(-)
+ create mode 100644 artifacts/chatmodz/public/.htaccess
+ create mode 100644 attached_assets/image_1788943333070.png
+ create mode 100644 attached_assets/image_1788943352809.png
+ create mode 100644 attached_assets/image_1788943366795.png
+ create mode 100644 attached_assets/image_1788943413925.png
+ create mode 100644 attached_assets/image_1788943440055.png
+ create mode 100644 screenshots/chatmodz-preview.jpg
+
+> @workspace/chatmodz@0.0.0 build /home/admin/apps/chatmodz/artifacts/chatmodz
+> vite build --config vite.config.ts
+
+vite v7.3.6 building client environment for production...
+✓ 1766 modules transformed.
+dist/public/index.html                   3.13 kB │ gzip:   1.23 kB
+dist/public/assets/index-CbILPz3u.css  122.11 kB │ gzip:  21.49 kB
+dist/public/assets/index-Baut9v3L.js   384.64 kB │ gzip: 119.92 kB
+✓ built in 12.05s
+
+> @workspace/chatmodz-api@1.0.0 build /home/admin/apps/chatmodz/artifacts/chatmodz-api
+> node build.mjs
+
+[root@mail chatmodz]#

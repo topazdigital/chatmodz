@@ -16,13 +16,13 @@ args = "Chatmodz preview"
 name = "Chatmodz preview"
 author = "agent"
 
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "CHATMODZ_DEMO_MODE=true PORT=8080 pnpm --filter @workspace/chatmodz-api run dev & PORT=5000 BASE_PATH=/ pnpm --filter @workspace/chatmodz run dev"
-waitForPort = 5000
-
 [workflows.workflow.metadata]
 outputType = "webview"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "PORT=5000 BASE_PATH=/ pnpm --filter @workspace/chatmodz run dev"
+waitForPort = 5000
 
 [[ports]]
 localPort = 5000
@@ -46,4 +46,4 @@ CHATMODZ_ADMIN_EMAIL = "patrickndungu.pnn@gmail.com"
 CHATMODZ_ADMIN_NAME = "Patrick Ndungu"
 
 [userenv.development]
-CHATMODZ_DEMO_MODE = "true"
+CHATMODZ_DEMO_MODE = "false"

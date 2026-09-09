@@ -1,4 +1,4 @@
-import { type ChangeEvent, type CSSProperties, type FormEvent, type ReactNode, createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, type ChangeEvent, type CSSProperties, type FormEvent, type ReactNode, createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { Link, Route, Switch, useLocation, useParams } from "wouter";
 import {
   Activity,
@@ -17,6 +17,7 @@ import {
   Menu,
   MessageSquare,
   Paperclip,
+  Pencil,
   RefreshCw,
   Search,
   Send,
@@ -708,7 +709,10 @@ type SiteAction = (url: string, method?: string, body?: unknown) => Promise<unkn
 
 function SiteManagementPanel({ sites, action, load, setNotice }: { sites: any[]; action: SiteAction; load: () => Promise<void>; setNotice: (message: string) => void }) {
   const [draft, setDraft] = useState({ internalName: "", displayName: "", endpointBaseUrl: "", secretEnvKey: "", integrationType: "hybrid" });
+  const [editingSiteId, setEditingSiteId] = useState<number | null>(null);
+  const [editDraft, setEditDraft] = useState({ internalName: "", displayName: "", endpointBaseUrl: "", secretEnvKey: "", integrationType: "hybrid" });
   const [saving, setSaving] = useState(false);
+  const [editSaving, setEditSaving] = useState(false);
 
   const saveSite = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -732,6 +736,33 @@ function SiteManagementPanel({ sites, action, load, setNotice }: { sites: any[];
       await load();
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Site status could not be updated");
+    }
+  };
+
+  const beginEdit = (site: any) => {
+    setEditingSiteId(Number(site.id));
+    setEditDraft({
+      internalName: String(site.internal_name || ""),
+      displayName: String(site.display_name || ""),
+      endpointBaseUrl: String(site.endpoint_base_url || ""),
+      secretEnvKey: String(site.secret_env_key || ""),
+      integrationType: String(site.integration_type || "hybrid"),
+    });
+  };
+
+  const saveEdit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!editingSiteId) return;
+    setEditSaving(true);
+    try {
+      await action(`/api/chatmodz/admin/sites/${editingSiteId}`, "PUT", editDraft);
+      setEditingSiteId(null);
+      setNotice("Connected site updated");
+      await load();
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Site could not be updated");
+    } finally {
+      setEditSaving(false);
     }
   };
 
@@ -783,19 +814,57 @@ function SiteManagementPanel({ sites, action, load, setNotice }: { sites: any[];
       <div className="panel-head">
         <div>
           <div className="panel-title">Connected sites</div>
-          <div className="panel-kicker">Secrets remain in environment configuration; only the key name is shown</div>
+          <div className="panel-kicker">Edit endpoints and secret key names without exposing secret values</div>
         </div>
       </div>
       <div className="table-wrap">
         <table className="data-table">
           <thead><tr><th>Site</th><th>Endpoint</th><th>Secret env key</th><th>Status</th><th>Action</th></tr></thead>
-          <tbody>{sites.length ? sites.map((site) => <tr key={site.id}>
-            <td><strong>{site.display_name}</strong><br /><span className="tiny-text mono">{site.internal_name}</span></td>
-            <td className="table-long">{site.endpoint_base_url || "Inbound only"}</td>
-            <td className="mono">{site.secret_env_key || "—"}</td>
-            <td><StatusPill type={site.status === "active" ? "active" : "pending"}>{site.status}</StatusPill></td>
-            <td><select className="form-field compact-select" value={site.status} onChange={(event) => updateStatus(site.id, event.target.value)}><option value="active">Active</option><option value="paused">Paused</option><option value="disconnected">Disconnected</option></select></td>
-          </tr>) : <tr><td colSpan={5}>No connected sites have been added yet.</td></tr>}</tbody>
+          <tbody>{sites.length ? sites.map((site) => <Fragment key={site.id}>
+            <tr>
+              <td><strong>{site.display_name}</strong><br /><span className="tiny-text mono">{site.internal_name}</span></td>
+              <td className="table-long">{site.endpoint_base_url || "Inbound only"}</td>
+              <td className="mono">{site.secret_env_key || "—"}</td>
+              <td><StatusPill type={site.status === "active" ? "active" : "pending"}>{site.status}</StatusPill></td>
+              <td><div className="inline-actions"><button className="button ghost compact" type="button" onClick={() => beginEdit(site)}><Pencil size={12} /> Edit</button><select className="form-field compact-select" value={site.status} onChange={(event) => updateStatus(site.id, event.target.value)} aria-label={`Change ${site.display_name} status`}><option value="active">Active</option><option value="paused">Paused</option><option value="disconnected">Disconnected</option></select></div></td>
+            </tr>
+            {editingSiteId === Number(site.id) ? <tr>
+              <td colSpan={5}>
+                <form className="form-grid site-edit-form" onSubmit={saveEdit}>
+                  <div className="form-group">
+                    <label htmlFor={`edit-site-internal-name-${site.id}`}>Internal name</label>
+                    <input id={`edit-site-internal-name-${site.id}`} className="form-field" value={editDraft.internalName} onChange={(event) => setEditDraft({ ...editDraft, internalName: event.target.value.toLowerCase() })} pattern="[a-z0-9_-]{2,120}" required />
+                  </div>
+                  <div className="form-group">
+                    <label htmlFor={`edit-site-display-name-${site.id}`}>Display name</label>
+                    <input id={`edit-site-display-name-${site.id}`} className="form-field" value={editDraft.displayName} onChange={(event) => setEditDraft({ ...editDraft, displayName: event.target.value })} required />
+                  </div>
+                  <div className="form-group">
+                    <label htmlFor={`edit-site-secret-key-${site.id}`}>Secret environment key</label>
+                    <input id={`edit-site-secret-key-${site.id}`} className="form-field mono" value={editDraft.secretEnvKey} onChange={(event) => setEditDraft({ ...editDraft, secretEnvKey: event.target.value.toUpperCase() })} pattern="[A-Z_][A-Z0-9_]*" required />
+                    <small>The API checks this environment variable before saving. Its value is never shown.</small>
+                  </div>
+                  <div className="form-group">
+                    <label htmlFor={`edit-site-endpoint-${site.id}`}>Reply endpoint URL</label>
+                    <input id={`edit-site-endpoint-${site.id}`} className="form-field" type="url" value={editDraft.endpointBaseUrl} onChange={(event) => setEditDraft({ ...editDraft, endpointBaseUrl: event.target.value })} placeholder="https://site.example.com/chatmodz/replies" />
+                    <small>Leave blank for inbound-only integrations.</small>
+                  </div>
+                  <div className="form-group">
+                    <label htmlFor={`edit-site-integration-type-${site.id}`}>Integration type</label>
+                    <select id={`edit-site-integration-type-${site.id}`} className="form-field" value={editDraft.integrationType} onChange={(event) => setEditDraft({ ...editDraft, integrationType: event.target.value })}>
+                      <option value="hybrid">Hybrid</option>
+                      <option value="webhook">Webhook</option>
+                      <option value="api">API</option>
+                    </select>
+                  </div>
+                  <div className="inline-actions full">
+                    <button className="button amber compact" type="submit" disabled={editSaving}>{editSaving ? "Saving…" : "Save changes"}</button>
+                    <button className="button ghost compact" type="button" onClick={() => setEditingSiteId(null)} disabled={editSaving}>Cancel</button>
+                  </div>
+                </form>
+              </td>
+            </tr> : null}
+          </Fragment>) : <tr><td colSpan={5}>No connected sites have been added yet.</td></tr>}</tbody>
         </table>
       </div>
     </section>

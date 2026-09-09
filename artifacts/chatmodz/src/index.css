@@ -586,6 +586,7 @@ button { cursor: pointer; }
 .settings-panel h2 { font-size: 17px; margin: 0 0 5px; letter-spacing: -.03em; }
 .settings-panel > p { color: var(--ink-soft); font-size: 12px; margin: 0 0 23px; }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.site-edit-form { padding: 10px 0 4px; }
 .form-group { display: grid; gap: 6px; }
 .form-group.full { grid-column: 1 / -1; }
 .form-group label { color: var(--ink-soft); font: 10px var(--app-font-mono); text-transform: uppercase; letter-spacing: .08em; }

@@ -1077,6 +1077,27 @@ router.post("/admin/sites", requireChatmodzAuth, requireChatmodzAdmin, async (re
   }
 })
 
+router.put("/admin/sites/:id", requireChatmodzAuth, requireChatmodzAdmin, async (req, res) => {
+  const id = Number(req.params.id)
+  const { internalName, displayName, endpointBaseUrl, secretEnvKey, integrationType = "hybrid" } = req.body || {}
+  if (!Number.isSafeInteger(id) || id <= 0) return res.status(400).json({ error: "Invalid site id" })
+  if (!/^[a-z0-9_-]{2,120}$/.test(String(internalName || "")) || !String(displayName || "").trim() || !/^[A-Z_][A-Z0-9_]*$/.test(String(secretEnvKey || ""))) return res.status(400).json({ error: "Internal name, display name, and an uppercase secret environment key are required" })
+  if (!["webhook", "api", "hybrid"].includes(String(integrationType))) return res.status(400).json({ error: "Invalid integration type" })
+  try {
+    const configuredSecret = process.env[String(secretEnvKey)] || ""
+    if (!configuredSecret) return res.status(400).json({ error: `Environment secret ${secretEnvKey} is not configured` })
+    const result: any = await database().execute(
+      "UPDATE sites SET internal_name = ?, display_name = ?, endpoint_base_url = ?, secret_env_key = ?, signing_secret_hash = ?, integration_type = ? WHERE id = ?",
+      [String(internalName), String(displayName).trim(), String(endpointBaseUrl || "").trim() || null, String(secretEnvKey), sha256(configuredSecret), String(integrationType), id],
+    )
+    if (!Number(result[0]?.affectedRows || 0)) return res.status(404).json({ error: "Connected site not found" })
+    res.json({ updated: true })
+  } catch (error: any) {
+    if (failConfiguration(res, error)) return
+    res.status(error?.code === "ER_DUP_ENTRY" ? 409 : 500).json({ error: error?.code === "ER_DUP_ENTRY" ? "A site with that internal name already exists" : "Could not update site" })
+  }
+})
+
 router.post("/admin/sites/:id/status", requireChatmodzAuth, requireChatmodzAdmin, async (req, res) => {
   const status = String(req.body?.status || "")
   if (!["active", "paused", "disconnected"].includes(status)) return res.status(400).json({ error: "Invalid site status" })

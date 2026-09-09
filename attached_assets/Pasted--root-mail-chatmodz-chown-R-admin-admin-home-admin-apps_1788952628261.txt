@@ -1,0 +1,166 @@
+[root@mail chatmodz]# chown -R admin:admin /home/admin/apps/chatmodz
+
+sudo -u admin -H bash -lc '
+set -e
+
+APP=/home/admin/apps/chatmodz
+WEB=/home/admin/domains/chatmodz.com/public_html
+
+cd "$APP"
+
+CI=true pnpm install --frozen-lockfile
+
+pnpm --filter @workspace/chatmodz run build
+pnpm --filter @workspace/chatmodz-api run build
+
+cp -af artifacts/chatmodz/dist/public/. "$WEB"/
+
+echo "Web and API builds completed."
+grep -o "assets/index-[^"]*\.js" "$WEB/index.html" | head -1
+'
+Scope: all 3 workspace projects
+Lockfile is up to date, resolution step is skipped
+Already up to date
+
+Done in 3s using pnpm v10.34.5
+
+> @workspace/chatmodz@0.0.0 build /home/admin/apps/chatmodz/artifacts/chatmodz
+> vite build --config vite.config.ts
+
+vite v7.3.6 building client environment for production...
+✓ 1766 modules transformed.
+dist/public/index.html                   3.13 kB │ gzip:   1.23 kB
+dist/public/assets/index-BBItO4kM.css  122.14 kB │ gzip:  21.50 kB
+dist/public/assets/index-BFG0VQYk.js   394.25 kB │ gzip: 121.58 kB
+✓ built in 9.67s
+
+> @workspace/chatmodz-api@1.0.0 build /home/admin/apps/chatmodz/artifacts/chatmodz-api
+> node build.mjs
+
+Web and API builds completed.
+bash: -c: line 17: unexpected EOF while looking for matching `"'
+[root@mail chatmodz]# kill 4139441
+sleep 2
+ss -ltnp | grep ':8787' || true
+/home/admin/apps/chatmodz/artifacts/chatmodz-api:
+ ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL  @workspace/chatmodz-api@1.0.0 start: `node dist/index.mjs`
+Command failed with signal "SIGTERM"
+[1]   Terminated              sudo -u admin -H bash -lc '
+cd /home/admin/apps/chatmodz
+set -a
+. ./.env.production
+set +a
+exec pnpm --filter @workspace/chatmodz-api run start
+'
+[root@mail chatmodz]# sudo -u admin -H bash -lc '
+set -e
+
+APP=/home/admin/apps/chatmodz
+cd "$APP"
+
+set -a
+. "$APP/.env.production"
+set +a
+
+pm2 start "$APP/artifacts/chatmodz-api/dist/index.mjs" \
+  --name chatmodz-api \
+  --cwd "$APP"
+
+pm2 save
+pm2 list
+'
+[PM2] Starting /home/admin/apps/chatmodz/artifacts/chatmodz-api/dist/index.mjs in fork_mode (1 instance)
+[PM2] Done.
+┌────┬─────────────────┬──────────┬──────┬───────────┬──────────┬──────────┐
+│ id │ name            │ mode     │ ↺    │ status    │ cpu      │ memory   │
+├────┼─────────────────┼──────────┼──────┼───────────┼──────────┼──────────┤
+│ 1  │ betcheza        │ fork     │ 0    │ online    │ 0%       │ 0b       │
+│ 3  │ chatmodz-api    │ fork     │ 0    │ online    │ 0%       │ 0b       │
+│ 0  │ dossy           │ fork     │ 0    │ online    │ 0%       │ 0b       │
+│ 2  │ wet3camp-api    │ fork     │ 0    │ online    │ 0%       │ 0b       │
+└────┴─────────────────┴──────────┴──────┴───────────┴──────────┴──────────┘
+host metrics | cpu: 32.7% | ram usage: 86.7% | lo: ⇓ 0.018mb/s ⇑ 0.018mb/s | eth0: ⇓ 0.029mb/s ⇑ 0.012mb/s |
+[PM2] Saving current process list...
+[PM2] Successfully saved in /home/admin/.pm2/dump.pm2
+┌────┬─────────────────┬──────────┬──────┬───────────┬──────────┬──────────┐
+│ id │ name            │ mode     │ ↺    │ status    │ cpu      │ memory   │
+├────┼─────────────────┼──────────┼──────┼───────────┼──────────┼──────────┤
+│ 1  │ betcheza        │ fork     │ 0    │ online    │ 0%       │ 0b       │
+│ 3  │ chatmodz-api    │ fork     │ 0    │ online    │ 0%       │ 0b       │
+│ 0  │ dossy           │ fork     │ 0    │ online    │ 0%       │ 0b       │
+│ 2  │ wet3camp-api    │ fork     │ 0    │ online    │ 0%       │ 0b       │
+└────┴─────────────────┴──────────┴──────┴───────────┴──────────┴──────────┘
+host metrics | cpu: 32.7% | ram usage: 86.7% | lo: ⇓ 0.018mb/s ⇑ 0.018mb/s | eth0: ⇓ 0.029mb/s ⇑ 0.012mb/s |
+[root@mail chatmodz]# curl -fsS http://127.0.0.1:8787/healthz
+curl -fsS https://chatmodz.com/healthz
+curl -fsSI https://chatmodz.com
+{"ok":true,"service":"chatmodz-api"}<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1" />
+    <title>Chatmodz | Remote Chat Operator Jobs &amp; Conversation Operations</title>
+    <meta name="description" content="Find remote chat operator work with Chatmodz. Join a focused conversation operations team, grow through clear operator levels, and earn per delivered message." />
+    <meta name="keywords" content="remote chat operator jobs, chat moderator jobs, conversation operator, work from home chat jobs, paid messaging jobs" />
+    <meta name="robots" content="index, follow" />
+    <meta property="og:title" content="Chatmodz | Remote Chat Operator Jobs" />
+    <meta property="og:description" content="A calm, secure workspace for remote chat operators. Apply, grow your level, and earn for every delivered reply." />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Chatmodz" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Chatmodz | Remote Chat Operator Jobs" />
+    <meta name="twitter:description" content="Join a focused remote chat operations team and grow through clear operator levels." />
+    <meta name="theme-color" content="#18263c" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "JobPosting",
+        "title": "Remote Chat Operator",
+        "description": "Join Chatmodz as a remote chat operator. Work from a focused conversation workspace, build experience through clear operator levels, and earn per delivered reply.",
+        "employmentType": "CONTRACTOR",
+        "hiringOrganization": {
+          "@type": "Organization",
+          "name": "Chatmodz"
+        },
+        "jobLocationType": "TELECOMMUTE",
+        "applicantLocationRequirements": {
+          "@type": "AdministrativeArea",
+          "name": "Worldwide"
+        }
+      }
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script type="module" crossorigin src="/assets/index-BFG0VQYk.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-BBItO4kM.css">
+  </head>
+  <body>
+    <div id="root"></div>
+    <script>
+      // Replit preview recovery: clear a stale demo session before React loads.
+      if (new URLSearchParams(window.location.search).has("reset_session")) {
+        try {
+          localStorage.removeItem("chatmodz_auth");
+        } catch {
+          // Ignore storage restrictions; the login page can still render.
+        }
+        const cleanUrl = new URL(window.location.href);
+        cleanUrl.searchParams.delete("reset_session");
+        window.history.replaceState({}, "", cleanUrl.pathname + cleanUrl.search + cleanUrl.hash);
+      }
+    </script>
+  </body>
+</html>
+HTTP/2 200
+last-modified: Wed, 09 Sep 2026 11:15:59 GMT
+etag: "c36-65b0af9d45828"
+accept-ranges: bytes
+content-length: 3126
+vary: Accept-Encoding,User-Agent
+content-type: text/html
+date: Wed, 09 Sep 2026 11:16:42 GMT
+server: Apache/2
+
+[root@mail chatmodz]#

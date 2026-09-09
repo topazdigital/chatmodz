@@ -1,0 +1,67 @@
+[root@mail chatmodz]# sudo -u admin -H bash -lc '
+set -e
+
+APP=/home/admin/apps/chatmodz
+WEB=/home/admin/domains/chatmodz.com/public_html
+
+cd "$APP"
+
+# Do not overwrite uncommitted server changes
+if [ -n "$(git status --porcelain)" ]; then
+  echo "ERROR: The server has local changes. Review them before pulling:"
+  git status --short
+  exit 1
+fi
+
+git checkout main
+git pull --ff-only origin main
+
+pnpm install --frozen-lockfile
+
+# Build the browser app
+pnpm --filter @workspace/chatmodz run build
+
+# Build the API
+pnpm --filter @workspace/chatmodz-api run build
+
+# Publish the browser build to DirectAdmin
+cp -af artifacts/chatmodz/dist/public/. "$WEB"/
+
+echo "Deployment files copied."
+'rep -o "assets/index-[^"]*\.js" "$WEB/index.html" | head -1
+Already on 'main'
+Your branch is up to date with 'origin/main'.
+remote: Enumerating objects: 19, done.
+remote: Counting objects: 100% (19/19), done.
+remote: Compressing objects: 100% (3/3), done.
+remote: Total 10 (delta 7), reused 10 (delta 7), pack-reused 0 (from 0)
+Unpacking objects: 100% (10/10), 2.30 KiB | 181.00 KiB/s, done.
+From https://github.com/topazdigital/chatmodz
+ * branch            main       -> FETCH_HEAD
+   10cbc57..844b27a  main       -> origin/main
+Updating 10cbc57..844b27a
+Fast-forward
+ artifacts/chatmodz-api/src/chatmodz.ts | 21 ++++++++++++++++++
+ artifacts/chatmodz/src/App.tsx         | 87 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++--------
+ artifacts/chatmodz/src/index.css       |  1 +
+ 3 files changed, 100 insertions(+), 9 deletions(-)
+Scope: all 3 workspace projects
+✔ The modules directories will be removed and reinstalled from scratch. Proceed? (Y/n) · true
+Recreating /home/admin/apps/chatmodz/node_modules
+ EACCES  EACCES: permission denied, rmdir '/home/admin/apps/chatmodz/artifacts/chatmodz-api/node_modules/.bin'
+
+
+[root@mail chatmodz]# sudo -u admin -H pm2 list
+ss -ltnp | grep ':8787' || true
+┌────┬─────────────────┬──────────┬──────┬───────────┬──────────┬──────────┐
+│ id │ name            │ mode     │ ↺    │ status    │ cpu      │ memory   │
+├────┼─────────────────┼──────────┼──────┼───────────┼──────────┼──────────┤
+│ 1  │ betcheza        │ fork     │ 0    │ online    │ 0%       │ 0b       │
+│ 0  │ dossy           │ fork     │ 0    │ online    │ 0%       │ 0b       │
+│ 2  │ wet3camp-api    │ fork     │ 0    │ online    │ 0%       │ 0b       │
+└────┴─────────────────┴──────────┴──────┴───────────┴──────────┴──────────┘
+host metrics | cpu: 11.7% | ram usage: 88.9% | lo: ⇓ 0.007mb/s ⇑ 0.007mb/s | eth0: ⇓ 0.004mb/s ⇑ 0.004mb/s |
+LISTEN 0      511                                       *:8787             *:*    users:(("node",pid=4139441,fd=21))                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    
+[root@mail chatmodz]# sudo -u admin -H pm2 restart chatmodz-api --update-env
+[PM2][ERROR] Process or Namespace chatmodz-api not found
+[root@mail chatmodz]#

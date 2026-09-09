@@ -574,6 +574,10 @@ button { cursor: pointer; }
 .detail-line { display: flex; justify-content: space-between; gap: 12px; font-size: 11px; margin-bottom: 9px; }
 .detail-line span:last-child { color: var(--ink); font-weight: 700; text-align: right; }
 .notice { border-left: 3px solid var(--amber); background: var(--amber-soft); padding: 10px 11px; font-size: 11px; color: #6c4e1c; line-height: 1.4; }
+.notes-help { margin: 0 0 10px; line-height: 1.45; }
+.notes-field { min-height: 118px; resize: vertical; font-size: 12px; line-height: 1.45; }
+.notes-actions { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 8px; }
+.notes-updated { display: block; margin-top: 8px; line-height: 1.35; }
 .settings-grid { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 20px; }
 .settings-nav { display: grid; align-content: start; gap: 4px; }
 .settings-tab { text-align: left; background: transparent; border: 0; padding: 10px 12px; color: var(--ink-soft); font-size: 12px; border-radius: 6px; }

@@ -8,6 +8,7 @@ import webpush from "web-push"
 const router = Router()
 const LOCK_MINUTES = 10
 const MIN_REPLY_CHARS = 20
+const MAX_OPERATOR_NOTES = 5000
 const SIGNATURE_WINDOW_MS = 5 * 60 * 1000
 
 type Operator = {
@@ -29,6 +30,7 @@ declare global {
 
 let pool: Pool | null = null
 const demoApplications: any[] = []
+const demoConversationNotes = new Map<number, { text: string; updatedAt: string | null; updatedByName: string | null }>()
 
 function database() {
   const url = process.env.CHATMODZ_DATABASE_URL
@@ -410,8 +412,20 @@ router.get("/conversations", requireChatmodzAuth, async (req, res) => {
 router.get("/conversations/:key/messages", requireChatmodzAuth, async (req, res) => {
   const conversationId = internalId(req.params.key)
   if (!conversationId) return res.status(400).json({ error: "Invalid conversation" })
+  if (isDemoMode()) {
+    const note = demoConversationNotes.get(conversationId)
+    return res.json({
+      messages: [],
+      users: {},
+      notes: note || { text: "", updatedAt: null, updatedByName: null },
+      demo: true,
+    })
+  }
   try {
-    const conversations = await query<any>("SELECT * FROM conversations WHERE id = ? LIMIT 1", [conversationId])
+    const conversations = await query<any>(
+      "SELECT c.*, o.full_name AS operator_notes_updated_by_name FROM conversations c LEFT JOIN operators o ON o.id = c.operator_notes_updated_by WHERE c.id = ? LIMIT 1",
+      [conversationId],
+    )
     const conversation = conversations[0]
     if (!conversation) return res.status(404).json({ error: "Conversation not found" })
     const rows = await query<any>("SELECT id, sender_type, body, media_proxy_url, media_type, sent_at, delivery_status FROM messages WHERE conversation_id = ? ORDER BY sent_at ASC, id ASC", [conversationId])
@@ -430,10 +444,53 @@ router.get("/conversations/:key/messages", requireChatmodzAuth, async (req, res)
         "-1": { id: -1, name: conversation.managed_profile_alias, photo: operatorMediaPath(conversation.managed_profile_photo_url) },
         "-2": { id: -2, name: conversation.member_alias, photo: operatorMediaPath(conversation.member_photo_url) },
       },
+      notes: {
+        text: conversation.operator_notes || "",
+        updatedAt: conversation.operator_notes_updated_at || null,
+        updatedByName: conversation.operator_notes_updated_by_name || null,
+      },
     })
   } catch (error) {
     if (failConfiguration(res, error)) return
     res.status(500).json({ error: "Messages unavailable" })
+  }
+})
+
+router.put("/conversations/:key/notes", requireChatmodzAuth, async (req, res) => {
+  const conversationId = internalId(req.params.key)
+  if (!conversationId) return res.status(400).json({ error: "Invalid conversation" })
+  const text = String(req.body?.notes ?? req.body?.text ?? "").trim().slice(0, MAX_OPERATOR_NOTES)
+  if (isDemoMode()) {
+    const note = { text, updatedAt: new Date().toISOString(), updatedByName: req.chatmodzOperator!.full_name }
+    demoConversationNotes.set(conversationId, note)
+    return res.json({ notes: note, demo: true })
+  }
+  try {
+    const rows = await query<any>(
+      "SELECT assigned_operator_id, lock_expires_at FROM conversations WHERE id = ? LIMIT 1",
+      [conversationId],
+    )
+    const conversation = rows[0]
+    if (!conversation) return res.status(404).json({ error: "Conversation not found" })
+    const ownsLock = Number(conversation.assigned_operator_id) === req.chatmodzOperator!.id
+      && conversation.lock_expires_at
+      && new Date(conversation.lock_expires_at).getTime() > Date.now()
+    if (!ownsLock) return res.status(409).json({ error: "Lock this conversation before saving notes" })
+    await query(
+      "UPDATE conversations SET operator_notes = ?, operator_notes_updated_at = NOW(), operator_notes_updated_by = ? WHERE id = ?",
+      [text || null, req.chatmodzOperator!.id, conversationId],
+    )
+    await recordActivity(req.chatmodzOperator!.id, "note", conversationId)
+    res.json({
+      notes: {
+        text,
+        updatedAt: new Date().toISOString(),
+        updatedByName: req.chatmodzOperator!.full_name,
+      },
+    })
+  } catch (error) {
+    if (failConfiguration(res, error)) return
+    res.status(500).json({ error: "Notes unavailable" })
   }
 })
 

@@ -192,6 +192,7 @@ type Conversation = {
 };
 type Message = { id: number; u1: number; u2: number; message: string; time: number; read: number; mediaUrl?: string; mediaType?: string };
 type Stats = { activeLocks: number; totalConversations: number; messagesSent: number };
+type ConversationNotes = { text: string; updatedAt: string | null; updatedByName: string | null };
 
 function countMeaningfulChars(value: string) {
   return Array.from(value).filter((character) => !/\s/u.test(character)).length;
@@ -445,6 +446,9 @@ function ConversationPage() {
   const [draft, setDraft] = useState("");
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [media, setMedia] = useState<{ file: File; preview: string; type: string } | null>(null);
+  const [notes, setNotes] = useState<ConversationNotes>({ text: "", updatedAt: null, updatedByName: null });
+  const [savedNotes, setSavedNotes] = useState("");
+  const [savingNotes, setSavingNotes] = useState(false);
   const [notice, setNotice] = useState("");
   const [loading, setLoading] = useState(Boolean(selected));
   const [sending, setSending] = useState(false);
@@ -455,17 +459,21 @@ function ConversationPage() {
   const meaningful = countMeaningfulChars(draft);
   const canSend = Boolean(selected && lockedByMe && (draft.trim() || media) && (isAdmin || meaningful >= MIN_REPLY_CHARS));
 
+  const conversationKey = selected?.key;
   const loadMessages = useCallback(async () => {
-    if (!selected || !token) return;
+    if (!conversationKey || !token) return;
     setLoading(true);
-    const response = await authFetch(token, `/api/chatmodz/conversations/${selected.key}/messages`);
+    const response = await authFetch(token, `/api/chatmodz/conversations/${conversationKey}/messages`);
     if (response.ok) {
       const data = await response.json();
       setMessages(data.messages || []);
       setUsers(data.users || {});
+      const loadedNotes = data.notes || { text: "", updatedAt: null, updatedByName: null };
+      setNotes(loadedNotes);
+      setSavedNotes(loadedNotes.text);
     }
     setLoading(false);
-  }, [selected, token]);
+  }, [conversationKey, token]);
   useEffect(() => { loadMessages(); }, [loadMessages]);
   useEffect(() => {
     if (!selected || !token) return;
@@ -488,6 +496,26 @@ function ConversationPage() {
     if (!response.ok) notify(data.error || "The conversation lock could not be changed");
     else { notify(lockedByMe ? "Conversation released" : "Conversation locked to you"); await reload(); }
     setLocking(false);
+  };
+  const saveNotes = async () => {
+    if (!selected || !token || !lockedByMe) return;
+    setSavingNotes(true);
+    try {
+      const response = await authFetch(token, `/api/chatmodz/conversations/${selected.key}/notes`, {
+        method: "PUT",
+        body: JSON.stringify({ notes: notes.text }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "Notes could not be saved");
+      const saved = data.notes || { ...notes, updatedAt: new Date().toISOString(), updatedByName: user?.name || "You" };
+      setNotes(saved);
+      setSavedNotes(saved.text);
+      notify("Shared operator notes saved");
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Notes could not be saved");
+    } finally {
+      setSavingNotes(false);
+    }
   };
   const handleFile = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -539,7 +567,7 @@ function ConversationPage() {
         <div className="messages">{loading ? <div className="empty-state"><RefreshCw className="spin" size={24} /><strong>Loading messages</strong></div> : messages.length ? messages.map((message, index) => { const byFake = message.u1 === selected.fakeUser.id; const sender = users[String(message.u1)] || (byFake ? selected.fakeUser : selected.realUser); return <div key={message.id} className={`message ${byFake ? "operator" : "member"}`}><Avatar photo={sender.photo} name={sender.name} size={27} /><div><div className="bubble">{message.mediaUrl && <MediaBubble message={message} />}{message.message && <p>{message.message}</p>}<div className="message-meta">{timeAgo(message.time)} {index === messages.length - 1 && <strong>{byFake ? "Waiting for member" : "Needs reply"}</strong>}</div></div></div></div>; }) : <div className="empty-state"><MessageSquare size={25} /><strong>No messages in this conversation</strong><span>The connected source returned an empty thread.</span></div>}</div>
         <div className="composer">{suggestions.length > 0 && <div className="canned-row">{suggestions.map((suggestion) => <button key={suggestion} className="canned" onClick={() => setDraft(suggestion)}>{suggestion}</button>)}</div>}{media && <div className="media-pending"><span>{media.type} attached</span><button className="icon-button" onClick={() => { URL.revokeObjectURL(media.preview); setMedia(null); }} aria-label="Remove attachment"><X size={14} /></button></div>}<div className="composer-row"><textarea value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={keyDown} onCopy={(event) => { if (!isAdmin) event.preventDefault(); }} onCut={(event) => { if (!isAdmin) event.preventDefault(); }} onPaste={(event) => { if (!isAdmin) event.preventDefault(); }} onDrop={(event) => { if (!isAdmin) event.preventDefault(); }} placeholder={lockedByMe ? "Write a thoughtful reply…" : "Lock this conversation before replying"} disabled={!lockedByMe || sending} aria-label="Reply message" /><div className="composer-tools"><input ref={inputRef} type="file" accept="image/*,video/*,audio/*" hidden onChange={handleFile} /><button className="icon-button" onClick={() => inputRef.current?.click()} disabled={!lockedByMe || sending} aria-label="Attach media"><Paperclip size={16} /></button><button className="button primary" onClick={send} disabled={!canSend || sending}><Send size={14} /> {sending ? "Sending…" : "Send"}</button></div></div><div className={`reply-counter ${!isAdmin && meaningful > 0 && meaningful < MIN_REPLY_CHARS ? "short" : ""}`}>{isAdmin ? "Administrator override enabled" : `${meaningful}/${MIN_REPLY_CHARS} non-space characters required`} · Enter to send, Shift+Enter for a new line</div></div>
       </section>
-      <aside className="panel conversation-side"><div className="side-section"><div className="side-title">Conversation details</div><div className="detail-line"><span>Latest activity</span><span>{timeAgo(selected.lastTime)}</span></div><div className="detail-line"><span>Messages</span><span>{selected.msgCount}</span></div><div className="detail-line"><span>Assignment</span><span>{lockedByMe ? "You" : selected.lock ? selected.lock.moderatorName : "Available"}</span></div></div><div className="side-section"><div className="side-title">Operator guardrails</div><div className="notice"><ShieldCheck size={13} /> Partner-site identity is never shown here. Keep replies warm, direct, and personal.</div></div><div className="side-section"><div className="side-title">Lock policy</div><div className="tiny-text"><Clock3 size={13} style={{ verticalAlign: "middle", marginRight: 5 }} /> Locks last 10 minutes and are renewed while this conversation is open.</div></div></aside>
+      <aside className="panel conversation-side"><div className="side-section"><div className="side-title">Conversation details</div><div className="detail-line"><span>Latest activity</span><span>{timeAgo(selected.lastTime)}</span></div><div className="detail-line"><span>Messages</span><span>{selected.msgCount}</span></div><div className="detail-line"><span>Assignment</span><span>{lockedByMe ? "You" : selected.lock ? selected.lock.moderatorName : "Available"}</span></div></div><div className="side-section shared-notes"><div className="side-title">Shared operator notes</div><p className="tiny-text notes-help">Private to operators. Record what was discussed, promised, or already provided so the next operator can continue naturally.</p><textarea className="form-field notes-field" value={notes.text} maxLength={5000} onChange={(event) => setNotes((current) => ({ ...current, text: event.target.value }))} placeholder={lockedByMe ? "What did the user ask for? What was promised or already given?" : "Lock this conversation to view and update notes"} disabled={!lockedByMe || savingNotes} aria-label="Shared operator notes" /><div className="notes-actions"><span className="tiny-text">{notes.text.length}/5000</span><button className="button amber compact" onClick={saveNotes} disabled={!lockedByMe || savingNotes || notes.text === savedNotes}>{savingNotes ? "Saving…" : "Save notes"}</button></div>{notes.updatedAt && <span className="tiny-text notes-updated">Updated by {notes.updatedByName || "an operator"} · {new Date(notes.updatedAt).toLocaleString()}</span>}</div><div className="side-section"><div className="side-title">Operator guardrails</div><div className="notice"><ShieldCheck size={13} /> Partner-site identity is never shown here. Keep replies warm, direct, and personal.</div></div><div className="side-section"><div className="side-title">Lock policy</div><div className="tiny-text"><Clock3 size={13} style={{ verticalAlign: "middle", marginRight: 5 }} /> Locks last 10 minutes and are renewed while this conversation is open.</div></div></aside>
     </div><Toast message={notice} />
   </div></Shell>;
 }

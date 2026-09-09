@@ -80,6 +80,9 @@ CREATE TABLE IF NOT EXISTS conversations (
   priority ENUM('normal', 'high', 'urgent') NOT NULL DEFAULT 'normal',
   status ENUM('open', 'waiting', 'closed') NOT NULL DEFAULT 'open',
   assigned_operator_id BIGINT UNSIGNED NULL,
+  operator_notes TEXT NULL,
+  operator_notes_updated_at TIMESTAMP NULL,
+  operator_notes_updated_by BIGINT UNSIGNED NULL,
   last_message_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -87,7 +90,8 @@ CREATE TABLE IF NOT EXISTS conversations (
   UNIQUE KEY conversation_external_unique (site_id, external_conversation_id),
   KEY conversations_queue_idx (status, assigned_operator_id, last_message_at),
   CONSTRAINT conversations_site_fk FOREIGN KEY (site_id) REFERENCES sites (id) ON DELETE RESTRICT,
-  CONSTRAINT conversations_operator_fk FOREIGN KEY (assigned_operator_id) REFERENCES operators (id) ON DELETE SET NULL
+  CONSTRAINT conversations_operator_fk FOREIGN KEY (assigned_operator_id) REFERENCES operators (id) ON DELETE SET NULL,
+  CONSTRAINT conversations_notes_operator_fk FOREIGN KEY (operator_notes_updated_by) REFERENCES operators (id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS conversation_assignments (
@@ -156,7 +160,7 @@ CREATE TABLE IF NOT EXISTS integration_deliveries (
 CREATE TABLE IF NOT EXISTS operator_activity (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   operator_id BIGINT UNSIGNED NOT NULL,
-  activity_type ENUM('login', 'claim', 'release', 'reply', 'logout', 'training') NOT NULL,
+  activity_type ENUM('login', 'claim', 'release', 'reply', 'note', 'logout', 'training') NOT NULL,
   conversation_id BIGINT UNSIGNED NULL,
   site_id BIGINT UNSIGNED NULL,
   metadata_json JSON NULL,

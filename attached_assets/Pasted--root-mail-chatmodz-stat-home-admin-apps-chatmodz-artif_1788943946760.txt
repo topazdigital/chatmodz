@@ -1,0 +1,77 @@
+[root@mail chatmodz]# stat /home/admin/apps/chatmodz/artifacts/chatmodz/dist/public/index.html
+ls -lah /home/admin/apps/chatmodz/artifacts/chatmodz/dist/public
+  File: /home/admin/apps/chatmodz/artifacts/chatmodz/dist/public/index.html
+  Size: 3126            Blocks: 8          IO Block: 4096   regular file
+Device: 804h/2052d      Inode: 1713355     Links: 1
+Access: (0644/-rw-r--r--)  Uid: ( 1000/   admin)   Gid: ( 1000/   admin)
+Access: 2026-09-09 04:33:17.339014949 -0400
+Modify: 2026-09-09 04:33:17.339014949 -0400
+Change: 2026-09-09 04:33:17.339014949 -0400
+ Birth: 2026-09-09 04:33:17.339014949 -0400
+total 32K
+drwxr-xr-x 3 admin admin 4.0K Sep  9 04:33 .
+drwxr-xr-x 3 admin admin 4.0K Sep  9 02:31 ..
+drwxr-xr-x 2 admin admin 4.0K Sep  9 04:33 assets
+-rw-r--r-- 1 admin admin  163 Sep  9 04:33 favicon.svg
+-rw-r--r-- 1 admin admin 3.1K Sep  9 04:33 index.html
+-rw-r--r-- 1 admin admin   45 Sep  9 04:33 robots.txt
+-rw-r--r-- 1 admin admin  182 Sep  9 04:33 sitemap.xml
+-rw-r--r-- 1 admin admin 1.9K Sep  9 04:33 sw.js
+[root@mail chatmodz]# cd /home/admin/apps/chatmodz
+git pull origin main
+pnpm install --frozen-lockfile
+pnpm --filter @workspace/chatmodz run build
+pnpm --filter @workspace/chatmodz-api run build
+fatal: detected dubious ownership in repository at '/home/admin/apps/chatmodz'
+To add an exception for this directory, call:
+
+        git config --global --add safe.directory /home/admin/apps/chatmodz
+Scope: all 3 workspace projects
+? The modules directories will be removed and reinstalled from scratch. Proceed? (Y/n) ‣ true
+   ╭─────────────────────────────────────────╮
+   │                                         │
+   │   Update available! 10.34.5 → 12.3.4.   │
+   │   Changelog: https://pnpm.io/v/12.3.4   │
+   │    To update, run: pnpm add -g pnpm     │
+   │                                         │
+   ╰─────────────────────────────────────────╯
+
+✔ The modules directories will be removed and reinstalled from scratch. Proceed? (Y/n) · true
+Recreating /home/admin/apps/chatmodz/node_modules
+
+Lockfile is up to date, resolution step is skipped
+Packages: +342
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+Progress: resolved 342, reused 224, downloaded 118, added 342, done
+╭ Warning ───────────────────────────────────────────────────────────────────────────────────╮
+│                                                                                            │
+│   Ignored build scripts: bcrypt@6.0.0, esbuild@0.27.7.                                     │
+│   Run "pnpm approve-builds" to pick which dependencies should be allowed to run scripts.   │
+│                                                                                            │
+╰────────────────────────────────────────────────────────────────────────────────────────────╯
+Done in 2m 40.5s using pnpm v10.34.5
+
+> @workspace/chatmodz@0.0.0 build /home/admin/apps/chatmodz/artifacts/chatmodz
+> vite build --config vite.config.ts
+
+failed to load config from /home/admin/apps/chatmodz/artifacts/chatmodz/vite.config.ts
+error during build:
+Error: PORT environment variable is required but was not provided.
+    at file:///home/admin/apps/chatmodz/artifacts/chatmodz/node_modules/.vite-temp/vite.config.ts.timestamp-1788943914329-18b47baca2c79.mjs:10:9
+    at ModuleJob.run (node:internal/modules/esm/module_job:325:25)
+    at async ModuleLoader.import (node:internal/modules/esm/loader:606:24)
+    at async loadConfigFromBundledFile (file:///home/admin/apps/chatmodz/node_modules/.pnpm/vite@7.3.6_@types+node@25.9.5_jiti@2.7.0_lightningcss@1.32.0/node_modules/vite/dist/node/chunks/config.js:35996:12)
+    at async bundleAndLoadConfigFile (file:///home/admin/apps/chatmodz/node_modules/.pnpm/vite@7.3.6_@types+node@25.9.5_jiti@2.7.0_lightningcss@1.32.0/node_modules/vite/dist/node/chunks/config.js:35884:17)
+    at async loadConfigFromFile (file:///home/admin/apps/chatmodz/node_modules/.pnpm/vite@7.3.6_@types+node@25.9.5_jiti@2.7.0_lightningcss@1.32.0/node_modules/vite/dist/node/chunks/config.js:35851:42)
+    at async resolveConfig (file:///home/admin/apps/chatmodz/node_modules/.pnpm/vite@7.3.6_@types+node@25.9.5_jiti@2.7.0_lightningcss@1.32.0/node_modules/vite/dist/node/chunks/config.js:35500:22)
+    at async createBuilder (file:///home/admin/apps/chatmodz/node_modules/.pnpm/vite@7.3.6_@types+node@25.9.5_jiti@2.7.0_lightningcss@1.32.0/node_modules/vite/dist/node/chunks/config.js:33955:19)
+    at async CAC.<anonymous> (file:///home/admin/apps/chatmodz/node_modules/.pnpm/vite@7.3.6_@types+node@25.9.5_jiti@2.7.0_lightningcss@1.32.0/node_modules/vite/dist/node/cli.js:629:10)
+/home/admin/apps/chatmodz/artifacts/chatmodz:
+ ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL  @workspace/chatmodz@0.0.0 build: `vite build --config vite.config.ts`
+Exit status 1
+
+> @workspace/chatmodz-api@1.0.0 build /home/admin/apps/chatmodz/artifacts/chatmodz-api
+> node build.mjs
+
+[root@mail chatmodz]#
+[root@mail chatmodz]#

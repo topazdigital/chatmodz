@@ -17,6 +17,52 @@ The project uses two workflows:
 
 The web client proxies `/api` requests to the API.
 
+## VPS / DirectAdmin deployment
+
+The browser client is a static Vite build and the API is a separate Node
+process. Keep them on separate ports so other domains on the server do not
+collide:
+
+1. Check the server before choosing a port:
+
+   ```bash
+   sudo ss -ltnp
+   ```
+
+2. Build the web client from the repository root:
+
+   ```bash
+   pnpm install --frozen-lockfile
+   pnpm --filter @workspace/chatmodz run build
+   ```
+
+3. Copy the *contents* of `artifacts/chatmodz/dist/public/` into the
+   domain's `public_html/` directory. Do not copy only the source directory or
+   leave `public_html` with just `.htaccess`; it must contain `index.html`,
+   `assets/`, and the other generated files.
+
+4. Run the API on an unused loopback port, for example `8787`, using the
+   production environment file. The process manager must load that file before
+   starting `artifacts/chatmodz-api/dist/index.mjs`:
+
+   ```bash
+   set -a
+   . /home/admin/apps/chatmodz/.env.production
+   set +a
+   pnpm --filter @workspace/chatmodz-api run build
+   pnpm --filter @workspace/chatmodz-api run start
+   ```
+
+   The production environment must provide
+   `CHATMODZ_DATABASE_URL` and `CHATMODZ_JWT_SECRET`, and the database URL
+   must point to the dedicated Chatmodz MySQL database. Never commit or paste
+   the environment file.
+
+5. Configure Apache/Nginx for the domain to serve `public_html` over 80/443
+   and reverse-proxy `/api` to `http://127.0.0.1:8787`. The generated
+   `public/.htaccess` provides the client-side route fallback when Apache
+   overrides are enabled.
+
 Replit is the development and review environment. Production runs on the VPS:
 review changes here, push them to GitHub, then pull and restart the application
 on the VPS. The production domain and VPS database are not expected to be

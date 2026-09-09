@@ -35,6 +35,15 @@ function toError(value: unknown): Error {
   }
 }
 
+function resetChatmodzSession() {
+  try {
+    localStorage.removeItem('chatmodz_auth');
+  } catch {
+    // Ignore storage restrictions; the login page can still be opened manually.
+  }
+  window.location.assign('/login');
+}
+
 function DefaultFallback({ error, resetError }: ErrorFallbackProps) {
   return (
     <div className="min-h-screen w-full flex items-center justify-center bg-gray-50 p-6">
@@ -52,13 +61,22 @@ function DefaultFallback({ error, resetError }: ErrorFallbackProps) {
             {error.message || String(error)}
           </pre>
         ) : null}
-        <button
-          type="button"
-          onClick={resetError}
-          className="mt-4 rounded bg-gray-900 px-4 py-2 text-sm text-white hover:bg-gray-700"
-        >
-          Try again
-        </button>
+        <div className="mt-4 flex justify-center gap-3">
+          <button
+            type="button"
+            onClick={resetError}
+            className="rounded bg-gray-200 px-4 py-2 text-sm text-gray-900 hover:bg-gray-300"
+          >
+            Try again
+          </button>
+          <button
+            type="button"
+            onClick={resetChatmodzSession}
+            className="rounded bg-gray-900 px-4 py-2 text-sm text-white hover:bg-gray-700"
+          >
+            Reset session and sign in
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -75,11 +93,20 @@ export class ErrorBoundary extends Component<
   }
 
   componentDidCatch(error: unknown, info: ErrorInfo): void {
+    const message = toError(error).message;
     console.error(
       'ErrorBoundary caught an error:',
       toError(error),
       info.componentStack,
     );
+    if (message.includes('userRef') && window.location.pathname !== '/login') {
+      try {
+        localStorage.removeItem('chatmodz_auth');
+      } catch {
+        // Ignore storage restrictions; the redirect still recovers the preview.
+      }
+      window.location.replace('/login');
+    }
   }
 
   componentDidUpdate(prevProps: ErrorBoundaryProps): void {

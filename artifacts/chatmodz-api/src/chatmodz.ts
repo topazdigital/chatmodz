@@ -1077,7 +1077,7 @@ router.post("/admin/sites", requireChatmodzAuth, requireChatmodzAdmin, async (re
   }
 })
 
-router.put("/admin/sites/:id", requireChatmodzAuth, requireChatmodzAdmin, async (req, res) => {
+async function updateConnectedSite(req: Request, res: Response) {
   const id = Number(req.params.id)
   const { internalName, displayName, endpointBaseUrl, secretEnvKey, integrationType = "hybrid" } = req.body || {}
   if (!Number.isSafeInteger(id) || id <= 0) return res.status(400).json({ error: "Invalid site id" })
@@ -1096,7 +1096,10 @@ router.put("/admin/sites/:id", requireChatmodzAuth, requireChatmodzAdmin, async 
     if (failConfiguration(res, error)) return
     res.status(error?.code === "ER_DUP_ENTRY" ? 409 : 500).json({ error: error?.code === "ER_DUP_ENTRY" ? "A site with that internal name already exists" : "Could not update site" })
   }
-})
+}
+
+router.put("/admin/sites/:id", requireChatmodzAuth, requireChatmodzAdmin, updateConnectedSite)
+router.post("/admin/sites/:id/settings", requireChatmodzAuth, requireChatmodzAdmin, updateConnectedSite)
 
 router.post("/admin/sites/:id/status", requireChatmodzAuth, requireChatmodzAdmin, async (req, res) => {
   const status = String(req.body?.status || "")

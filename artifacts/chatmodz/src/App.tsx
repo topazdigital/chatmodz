@@ -755,7 +755,7 @@ function SiteManagementPanel({ sites, action, load, setNotice }: { sites: any[];
     if (!editingSiteId) return;
     setEditSaving(true);
     try {
-      await action(`/api/chatmodz/admin/sites/${editingSiteId}`, "PUT", editDraft);
+      await action(`/api/chatmodz/admin/sites/${editingSiteId}/settings`, "POST", editDraft);
       setEditingSiteId(null);
       setNotice("Connected site updated");
       await load();

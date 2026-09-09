@@ -16,7 +16,9 @@ The web artifact is a live-data client for the dedicated Chatmodz API:
 - real message loading, minimum reply length, delivery status, media metadata,
   and browser push notification controls
 - administrator-only application approval, operator status, site health,
-  attribution, and delivery reporting
+  attribution, delivery reporting, and operator compensation levels
+- per-message earnings snapshots that preserve the operator level and rate used
+  when each reply was delivered
 
 There are no seeded conversations, fake operators, local reply persistence, or
 browser-side site credentials. When `CHATMODZ_DATABASE_URL` is not configured,
@@ -32,7 +34,9 @@ connected. Do not point it at a dating site's database.
 The database stores normalized conversations and messages plus the original
 `site_id` and external IDs needed to route replies back to the correct site.
 Operators receive only anonymized conversation payloads; admin reporting can
-join site attribution server-side.
+join site attribution server-side. Compensation is tracked in
+`operator_earnings`; it is an internal ledger for payout reconciliation and
+does not transfer money by itself.
 
 ## Connecting dating sites
 

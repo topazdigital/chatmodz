@@ -31,6 +31,13 @@ declare global {
 let pool: Pool | null = null
 const demoApplications: any[] = []
 const demoConversationNotes = new Map<number, { text: string; updatedAt: string | null; updatedByName: string | null }>()
+const demoLevels = [
+  { id: 1, name: "Beginner", slug: "beginner", description: "New operators building consistency and learning the workflow.", rate_minor: 5, currency: "EUR", is_default: true, active: true, assigned_operators: 1 },
+  { id: 2, name: "Developing", slug: "developing", description: "Operators who meet quality and reliability expectations.", rate_minor: 10, currency: "EUR", is_default: false, active: true, assigned_operators: 0 },
+  { id: 3, name: "Experienced", slug: "experienced", description: "Trusted operators with a strong history of quality replies.", rate_minor: 15, currency: "EUR", is_default: false, active: true, assigned_operators: 0 },
+]
+const demoEarnings: any[] = []
+const demoOperatorLevels = new Map<number, number>([[2, 1]])
 
 function database() {
   const url = process.env.CHATMODZ_DATABASE_URL
@@ -97,7 +104,7 @@ export async function initializeChatmodz() {
 }
 
 async function query<T = any>(sql: string, values: unknown[] = []): Promise<T[]> {
-  const [rows] = await database().execute(sql, values)
+  const [rows] = await database().execute(sql, values as any[])
   return rows as T[]
 }
 
@@ -152,6 +159,48 @@ function internalId(value: string) {
 
 function meaningfulChars(value: string) {
   return Array.from(value).filter((character) => !/\s/u.test(character)).length
+}
+
+function rateToMinor(value: unknown) {
+  const normalized = String(value ?? "").trim().replace(",", ".")
+  if (!/^\d+(\.\d{1,2})?$/.test(normalized)) return null
+  const [whole, fraction = ""] = normalized.split(".")
+  const minor = Number(whole) * 100 + Number(fraction.padEnd(2, "0"))
+  return Number.isSafeInteger(minor) && minor >= 0 && minor <= 2147483647 ? minor : null
+}
+
+function slugify(value: string) {
+  return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 120)
+}
+
+function compensationLevel(row: any) {
+  return {
+    id: Number(row.id),
+    name: row.name,
+    slug: row.slug,
+    description: row.description || "",
+    rateMinor: Number(row.rate_minor || 0),
+    currency: String(row.currency || "EUR").toUpperCase(),
+    isDefault: Boolean(row.is_default),
+    active: Boolean(row.active),
+    assignedOperators: Number(row.assigned_operators || 0),
+  }
+}
+
+function compensationOperator(row: any) {
+  return {
+    id: Number(row.id),
+    fullName: row.full_name,
+    email: row.email,
+    role: row.role,
+    status: row.status,
+    levelId: row.level_id ? Number(row.level_id) : null,
+    levelName: row.level_name || null,
+    rateMinor: row.rate_minor === null || row.rate_minor === undefined ? null : Number(row.rate_minor),
+    currency: row.level_currency || null,
+    earnedMinor: Number(row.earned_minor || 0),
+    earnedMessages: Number(row.earned_messages || 0),
+  }
 }
 
 function secretFor(site: any) {
@@ -410,7 +459,7 @@ router.get("/conversations", requireChatmodzAuth, async (req, res) => {
 })
 
 router.get("/conversations/:key/messages", requireChatmodzAuth, async (req, res) => {
-  const conversationId = internalId(req.params.key)
+  const conversationId = internalId(String(req.params.key))
   if (!conversationId) return res.status(400).json({ error: "Invalid conversation" })
   if (isDemoMode()) {
     const note = demoConversationNotes.get(conversationId)
@@ -457,7 +506,7 @@ router.get("/conversations/:key/messages", requireChatmodzAuth, async (req, res)
 })
 
 router.put("/conversations/:key/notes", requireChatmodzAuth, async (req, res) => {
-  const conversationId = internalId(req.params.key)
+  const conversationId = internalId(String(req.params.key))
   if (!conversationId) return res.status(400).json({ error: "Invalid conversation" })
   const text = String(req.body?.notes ?? req.body?.text ?? "").trim().slice(0, MAX_OPERATOR_NOTES)
   if (isDemoMode()) {
@@ -495,7 +544,7 @@ router.put("/conversations/:key/notes", requireChatmodzAuth, async (req, res) =>
 })
 
 router.post("/conversations/:key/lock", requireChatmodzAuth, async (req, res) => {
-  const conversationId = internalId(req.params.key)
+  const conversationId = internalId(String(req.params.key))
   if (!conversationId) return res.status(400).json({ error: "Invalid conversation" })
   try {
     const result: any = await database().execute(
@@ -513,7 +562,7 @@ router.post("/conversations/:key/lock", requireChatmodzAuth, async (req, res) =>
 })
 
 router.post("/conversations/:key/unlock", requireChatmodzAuth, async (req, res) => {
-  const conversationId = internalId(req.params.key)
+  const conversationId = internalId(String(req.params.key))
   try {
     const rows = await query<any>("SELECT assigned_operator_id FROM conversations WHERE id = ? LIMIT 1", [conversationId])
     const owner = Number(rows[0]?.assigned_operator_id || 0)
@@ -529,7 +578,7 @@ router.post("/conversations/:key/unlock", requireChatmodzAuth, async (req, res) 
 })
 
 router.post("/conversations/:key/keepalive", requireChatmodzAuth, async (req, res) => {
-  const conversationId = internalId(req.params.key)
+  const conversationId = internalId(String(req.params.key))
   try {
     const result: any = await database().execute("UPDATE conversations SET lock_expires_at = DATE_ADD(NOW(), INTERVAL 10 MINUTE) WHERE id = ? AND assigned_operator_id = ? AND lock_expires_at > NOW()", [conversationId, req.chatmodzOperator!.id])
     if (!Number(result[0]?.affectedRows || 0)) return res.status(403).json({ error: "Lock expired or is not yours" })
@@ -541,13 +590,24 @@ router.post("/conversations/:key/keepalive", requireChatmodzAuth, async (req, re
 })
 
 router.post("/conversations/:key/reply", requireChatmodzAuth, async (req, res) => {
-  const conversationId = internalId(req.params.key)
+  const conversationId = internalId(String(req.params.key))
   const body = String(req.body?.message || "").trim()
   const mediaUrl = String(req.body?.mediaUrl || "").trim() || null
   const mediaType = String(req.body?.mediaType || "").trim() || null
   if (!conversationId || (!body && !mediaUrl)) return res.status(400).json({ error: "Reply text or media is required" })
   if (req.chatmodzOperator!.role !== "admin" && meaningfulChars(body) < MIN_REPLY_CHARS) return res.status(400).json({ error: `Reply must contain at least ${MIN_REPLY_CHARS} non-whitespace characters` })
   try {
+    const levels = await query<any>(
+      `SELECT l.id, l.rate_minor, l.currency
+       FROM operator_levels l
+       LEFT JOIN operator_level_assignments a ON a.level_id = l.id AND a.operator_id = ?
+       WHERE l.active = 1 AND (a.operator_id IS NOT NULL OR l.is_default = 1)
+       ORDER BY CASE WHEN a.operator_id IS NOT NULL THEN 0 ELSE 1 END, l.id
+       LIMIT 1`,
+      [req.chatmodzOperator!.id],
+    )
+    const level = levels[0]
+    if (!level) return res.status(409).json({ error: "No active compensation level is configured for this operator" })
     const rows = await query<any>("SELECT c.*, s.endpoint_base_url, s.secret_env_key, s.internal_name FROM conversations c JOIN sites s ON s.id = c.site_id WHERE c.id = ? AND c.assigned_operator_id = ? AND c.lock_expires_at > NOW() LIMIT 1", [conversationId, req.chatmodzOperator!.id])
     const conversation = rows[0]
     if (!conversation) return res.status(409).json({ error: "Lock expired or is not yours" })
@@ -557,6 +617,10 @@ router.post("/conversations/:key/reply", requireChatmodzAuth, async (req, res) =
     const messageRows = await query<any>("SELECT id, sent_at FROM messages WHERE external_message_id = ? LIMIT 1", [externalMessageId])
     const messageId = Number(messageRows[0]?.id)
     await query("INSERT INTO integration_deliveries (site_id, direction, external_event_id, conversation_id, status, attempt_count, payload_json) VALUES (?, 'outgoing', ?, ?, 'received', 0, ?)", [conversation.site_id, externalMessageId, conversationId, JSON.stringify(deliveryPayload)])
+    await query(
+      "INSERT INTO operator_earnings (message_id, operator_id, level_id, rate_minor, currency, status) VALUES (?, ?, ?, ?, ?, 'pending')",
+      [messageId, req.chatmodzOperator!.id, Number(level.id), Number(level.rate_minor), String(level.currency || "EUR").toUpperCase()],
+    )
     try {
       await deliverReply(conversation, deliveryPayload)
       await query("UPDATE messages SET delivery_status = 'delivered' WHERE id = ?", [messageId])
@@ -565,6 +629,7 @@ router.post("/conversations/:key/reply", requireChatmodzAuth, async (req, res) =
     } catch (error: any) {
       await query("UPDATE messages SET delivery_status = 'failed' WHERE id = ?", [messageId])
       await query("UPDATE integration_deliveries SET status = 'failed', attempt_count = attempt_count + 1, error_message = ? WHERE external_event_id = ?", [String(error?.message || "Delivery failed").slice(0, 500), externalMessageId])
+      await query("UPDATE operator_earnings SET status = 'void' WHERE message_id = ?", [messageId])
       return res.status(502).json({ error: "Reply could not be delivered to the connected site" })
     }
     res.json({ message: { id: messageId, u1: -1, u2: -2, message: body, time: Math.floor(new Date(messageRows[0].sent_at).getTime() / 1000), read: 1, mediaUrl: operatorMediaPath(mediaUrl), mediaType }, deliveryStatus: "delivered" })
@@ -693,6 +758,215 @@ router.post("/admin/operators/:id/status", requireChatmodzAuth, requireChatmodzA
   if (!["training", "active", "suspended", "rejected"].includes(status)) return res.status(400).json({ error: "Invalid operator status" })
   try { await query("UPDATE operators SET status = ? WHERE id = ?", [status, Number(req.params.id)]); res.json({ updated: true }) }
   catch (error) { if (!failConfiguration(res, error)) res.status(500).json({ error: "Could not update operator" }) }
+})
+
+router.get("/admin/compensation", requireChatmodzAuth, requireChatmodzAdmin, async (_req, res) => {
+  if (isDemoMode()) {
+    const operators = [demoOperator("admin"), demoOperator("operator")].map((operator) => {
+      const level = demoLevels.find((item) => item.id === demoOperatorLevels.get(operator.id))
+      return compensationOperator({
+        ...operator,
+        level_id: level?.id || null,
+        level_name: level?.name || null,
+        rate_minor: level?.rate_minor ?? null,
+        level_currency: level?.currency || null,
+        earned_minor: 0,
+        earned_messages: 0,
+      })
+    })
+    return res.json({
+      levels: demoLevels.map(compensationLevel),
+      operators,
+      summary: { totalMessages: 0, accruedMinor: 0, paidMinor: 0, pendingMinor: 0 },
+      byLevel: demoLevels.map((level) => ({ id: level.id, name: level.name, messages: 0, accruedMinor: 0 })),
+      recent: demoEarnings,
+      demo: true,
+    })
+  }
+  try {
+    const levels = await query<any>(
+      `SELECT l.*, COUNT(DISTINCT a.operator_id) AS assigned_operators
+       FROM operator_levels l
+       LEFT JOIN operator_level_assignments a ON a.level_id = l.id
+       GROUP BY l.id, l.name, l.slug, l.description, l.rate_minor, l.currency, l.is_default, l.active, l.created_at, l.updated_at
+       ORDER BY l.rate_minor ASC, l.id ASC`,
+    )
+    const operators = await query<any>(
+      `SELECT o.id, o.full_name, o.email, o.role, o.status,
+          l.id AS level_id, l.name AS level_name, l.rate_minor, l.currency AS level_currency,
+          COALESCE(SUM(CASE WHEN e.status <> 'void' THEN e.rate_minor ELSE 0 END), 0) AS earned_minor,
+          COUNT(CASE WHEN e.status <> 'void' THEN e.id END) AS earned_messages
+       FROM operators o
+       LEFT JOIN operator_level_assignments a ON a.operator_id = o.id
+       LEFT JOIN operator_levels l ON l.id = a.level_id
+       LEFT JOIN operator_earnings e ON e.operator_id = o.id
+       GROUP BY o.id, o.full_name, o.email, o.role, o.status, l.id, l.name, l.rate_minor, l.currency
+       ORDER BY MAX(o.created_at) DESC`,
+    )
+    const [summary] = await query<any>(
+      `SELECT
+         COUNT(CASE WHEN status <> 'void' THEN 1 END) AS total_messages,
+         COALESCE(SUM(CASE WHEN status <> 'void' THEN rate_minor ELSE 0 END), 0) AS accrued_minor,
+         COALESCE(SUM(CASE WHEN status = 'paid' THEN rate_minor ELSE 0 END), 0) AS paid_minor,
+         COALESCE(SUM(CASE WHEN status = 'pending' THEN rate_minor ELSE 0 END), 0) AS pending_minor
+       FROM operator_earnings`,
+    )
+    const byLevel = await query<any>(
+      `SELECT l.id, l.name,
+          COUNT(CASE WHEN e.status <> 'void' THEN e.id END) AS messages,
+          COALESCE(SUM(CASE WHEN e.status <> 'void' THEN e.rate_minor ELSE 0 END), 0) AS accrued_minor
+       FROM operator_levels l
+       LEFT JOIN operator_earnings e ON e.level_id = l.id
+       GROUP BY l.id, l.name
+       ORDER BY l.rate_minor ASC, l.id ASC`,
+    )
+    const recent = await query<any>(
+      `SELECT e.id, e.message_id, e.operator_id, o.full_name AS operator_name,
+          e.level_id, l.name AS level_name, e.rate_minor, e.currency, e.status,
+          e.paid_at, e.created_at, m.conversation_id
+       FROM operator_earnings e
+       JOIN operators o ON o.id = e.operator_id
+       JOIN operator_levels l ON l.id = e.level_id
+       JOIN messages m ON m.id = e.message_id
+       ORDER BY e.created_at DESC
+       LIMIT 100`,
+    )
+    res.json({
+      levels: levels.map(compensationLevel),
+      operators: operators.map(compensationOperator),
+      summary: {
+        totalMessages: Number(summary?.total_messages || 0),
+        accruedMinor: Number(summary?.accrued_minor || 0),
+        paidMinor: Number(summary?.paid_minor || 0),
+        pendingMinor: Number(summary?.pending_minor || 0),
+      },
+      byLevel: byLevel.map((row) => ({ id: Number(row.id), name: row.name, messages: Number(row.messages || 0), accruedMinor: Number(row.accrued_minor || 0) })),
+      recent: recent.map((row) => ({
+        id: Number(row.id),
+        messageId: Number(row.message_id),
+        operatorId: Number(row.operator_id),
+        operatorName: row.operator_name,
+        levelId: Number(row.level_id),
+        levelName: row.level_name,
+        rateMinor: Number(row.rate_minor),
+        currency: row.currency,
+        status: row.status,
+        paidAt: row.paid_at,
+        createdAt: row.created_at,
+        conversationId: Number(row.conversation_id),
+      })),
+    })
+  } catch (error) {
+    if (!failConfiguration(res, error)) res.status(500).json({ error: "Compensation data unavailable" })
+  }
+})
+
+router.post("/admin/levels", requireChatmodzAuth, requireChatmodzAdmin, async (req, res) => {
+  const name = String(req.body?.name || "").trim().slice(0, 120)
+  const description = String(req.body?.description || "").trim().slice(0, 500) || null
+  const slug = slugify(String(req.body?.slug || name))
+  const rateMinor = rateToMinor(req.body?.rate)
+  const currency = String(req.body?.currency || "EUR").trim().toUpperCase()
+  const isDefault = Boolean(req.body?.isDefault)
+  if (!name || !slug || rateMinor === null || !/^[A-Z]{3}$/.test(currency)) return res.status(400).json({ error: "Name, a valid non-negative rate, and a 3-letter currency are required" })
+  if (isDemoMode()) {
+    if (demoLevels.some((level) => level.slug === slug)) return res.status(409).json({ error: "That level already exists" })
+    const id = Math.max(...demoLevels.map((level) => level.id), 0) + 1
+    if (isDefault) demoLevels.forEach((level) => { level.is_default = false })
+    demoLevels.push({ id, name, slug, description: description || "", rate_minor: rateMinor, currency, is_default: isDefault, active: true, assigned_operators: 0 })
+    return res.status(201).json({ level: compensationLevel(demoLevels[demoLevels.length - 1]) })
+  }
+  try {
+    const result = await withTransaction(async (connection) => {
+      if (isDefault) await connection.execute("UPDATE operator_levels SET is_default = 0")
+      const created: any = await connection.execute(
+        "INSERT INTO operator_levels (name, slug, description, rate_minor, currency, is_default) VALUES (?, ?, ?, ?, ?, ?)",
+        [name, slug, description, rateMinor, currency, isDefault ? 1 : 0],
+      )
+      return Number(created[0].insertId)
+    })
+    const [level] = await query<any>("SELECT * FROM operator_levels WHERE id = ?", [result])
+    res.status(201).json({ level: compensationLevel(level) })
+  } catch (error: any) {
+    if (failConfiguration(res, error)) return
+    res.status(error?.code === "ER_DUP_ENTRY" ? 409 : 500).json({ error: error?.code === "ER_DUP_ENTRY" ? "That level already exists" : "Could not create level" })
+  }
+})
+
+router.put("/admin/levels/:id", requireChatmodzAuth, requireChatmodzAdmin, async (req, res) => {
+  const id = Number(req.params.id)
+  const name = String(req.body?.name || "").trim().slice(0, 120)
+  const description = String(req.body?.description || "").trim().slice(0, 500) || null
+  const rateMinor = rateToMinor(req.body?.rate)
+  const currency = String(req.body?.currency || "EUR").trim().toUpperCase()
+  const active = req.body?.active !== false
+  const isDefault = Boolean(req.body?.isDefault)
+  if (!id || !name || rateMinor === null || !/^[A-Z]{3}$/.test(currency)) return res.status(400).json({ error: "Name, a valid non-negative rate, and a 3-letter currency are required" })
+  if (isDemoMode()) {
+    const level = demoLevels.find((item) => item.id === id)
+    if (!level) return res.status(404).json({ error: "Level not found" })
+    if (isDefault) demoLevels.forEach((item) => { item.is_default = item.id === id })
+    Object.assign(level, { name, description: description || "", rate_minor: rateMinor, currency, active, is_default: isDefault })
+    return res.json({ level: compensationLevel(level) })
+  }
+  try {
+    await withTransaction(async (connection) => {
+      if (isDefault) await connection.execute("UPDATE operator_levels SET is_default = 0")
+      const result: any = await connection.execute(
+        "UPDATE operator_levels SET name = ?, description = ?, rate_minor = ?, currency = ?, active = ?, is_default = ? WHERE id = ?",
+        [name, description, rateMinor, currency, active ? 1 : 0, isDefault ? 1 : 0, id],
+      )
+      if (!Number(result[0].affectedRows)) throw Object.assign(new Error("Level not found"), { code: "NOT_FOUND" })
+    })
+    const [level] = await query<any>("SELECT * FROM operator_levels WHERE id = ?", [id])
+    res.json({ level: compensationLevel(level) })
+  } catch (error: any) {
+    if (error?.code === "NOT_FOUND") return res.status(404).json({ error: "Level not found" })
+    if (!failConfiguration(res, error)) res.status(500).json({ error: "Could not update level" })
+  }
+})
+
+router.post("/admin/operators/:id/level", requireChatmodzAuth, requireChatmodzAdmin, async (req, res) => {
+  const operatorId = Number(req.params.id)
+  const levelId = Number(req.body?.levelId)
+  if (!operatorId || !levelId) return res.status(400).json({ error: "A valid operator and level are required" })
+  if (isDemoMode()) {
+    if (!demoLevels.some((level) => level.id === levelId && level.active)) return res.status(404).json({ error: "Active level not found" })
+    demoOperatorLevels.set(operatorId, levelId)
+    return res.json({ assigned: true })
+  }
+  try {
+    const levels = await query<any>("SELECT id FROM operator_levels WHERE id = ? AND active = 1 LIMIT 1", [levelId])
+    if (!levels[0]) return res.status(404).json({ error: "Active level not found" })
+    await query(
+      "INSERT INTO operator_level_assignments (operator_id, level_id, assigned_by) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE level_id = VALUES(level_id), assigned_by = VALUES(assigned_by), updated_at = CURRENT_TIMESTAMP",
+      [operatorId, levelId, req.chatmodzOperator!.id],
+    )
+    await recordActivity(req.chatmodzOperator!.id, "training", undefined, undefined, { operatorId, levelId, action: "level_assigned" })
+    res.json({ assigned: true })
+  } catch (error) {
+    if (!failConfiguration(res, error)) res.status(500).json({ error: "Could not assign operator level" })
+  }
+})
+
+router.post("/admin/earnings/:id/status", requireChatmodzAuth, requireChatmodzAdmin, async (req, res) => {
+  const id = Number(req.params.id)
+  const status = String(req.body?.status || "")
+  if (!id || !["pending", "paid", "void"].includes(status)) return res.status(400).json({ error: "Invalid earnings status" })
+  if (isDemoMode()) {
+    const earning = demoEarnings.find((item) => item.id === id)
+    if (!earning) return res.status(404).json({ error: "Earning record not found" })
+    earning.status = status
+    earning.paidAt = status === "paid" ? new Date().toISOString() : null
+    return res.json({ updated: true, earning })
+  }
+  try {
+    const result: any = await database().execute("UPDATE operator_earnings SET status = ?, paid_at = CASE WHEN ? = 'paid' THEN NOW() ELSE NULL END WHERE id = ?", [status, status, id])
+    if (!Number(result[0]?.affectedRows || 0)) return res.status(404).json({ error: "Earning record not found" })
+    res.json({ updated: true })
+  } catch (error) {
+    if (!failConfiguration(res, error)) res.status(500).json({ error: "Could not update earnings status" })
+  }
 })
 
 router.get("/admin/sites", requireChatmodzAuth, requireChatmodzAdmin, async (_req, res) => {

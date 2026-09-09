@@ -17,6 +17,11 @@ The project uses two workflows:
 
 The web client proxies `/api` requests to the API.
 
+The public landing page includes search-friendly metadata, structured job
+posting data, and a sitemap. The administrator control room includes a
+Pay & levels tab: create levels with per-delivered-message rates, assign a
+level to each operator, and mark ledger entries pending, paid, or void.
+
 ## Database requirement
 
 The API uses a dedicated MySQL 8 database through `CHATMODZ_DATABASE_URL`.
@@ -26,6 +31,10 @@ login, the queue, applications, or message delivery.
 
 The public page can be previewed without a database. Authenticated testing
 cannot work until the MySQL secret is configured.
+
+Compensation tables and starter levels are included in
+`artifacts/chatmodz/database/schema.mysql.sql`. Earnings are an internal
+ledger; integrating a payout provider is intentionally separate.
 
 ## Admin test account
 

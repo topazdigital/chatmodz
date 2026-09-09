@@ -38,6 +38,35 @@ CREATE TABLE IF NOT EXISTS operators (
   KEY operators_status_idx (status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS operator_levels (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  name VARCHAR(120) NOT NULL,
+  slug VARCHAR(120) NOT NULL,
+  description VARCHAR(500) NULL,
+  rate_minor INT UNSIGNED NOT NULL,
+  currency CHAR(3) NOT NULL DEFAULT 'EUR',
+  is_default BOOLEAN NOT NULL DEFAULT FALSE,
+  active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY operator_levels_slug_unique (slug),
+  KEY operator_levels_active_idx (active, rate_minor)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS operator_level_assignments (
+  operator_id BIGINT UNSIGNED NOT NULL,
+  level_id BIGINT UNSIGNED NOT NULL,
+  assigned_by BIGINT UNSIGNED NULL,
+  assigned_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (operator_id),
+  KEY level_assignments_level_idx (level_id),
+  CONSTRAINT level_assignments_operator_fk FOREIGN KEY (operator_id) REFERENCES operators (id) ON DELETE CASCADE,
+  CONSTRAINT level_assignments_level_fk FOREIGN KEY (level_id) REFERENCES operator_levels (id) ON DELETE RESTRICT,
+  CONSTRAINT level_assignments_admin_fk FOREIGN KEY (assigned_by) REFERENCES operators (id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS operator_applications (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   full_name VARCHAR(160) NOT NULL,
@@ -124,6 +153,26 @@ CREATE TABLE IF NOT EXISTS messages (
   CONSTRAINT messages_operator_fk FOREIGN KEY (sent_by_operator_id) REFERENCES operators (id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS operator_earnings (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  message_id BIGINT UNSIGNED NOT NULL,
+  operator_id BIGINT UNSIGNED NOT NULL,
+  level_id BIGINT UNSIGNED NOT NULL,
+  rate_minor INT UNSIGNED NOT NULL,
+  currency CHAR(3) NOT NULL,
+  status ENUM('pending', 'paid', 'void') NOT NULL DEFAULT 'pending',
+  paid_at TIMESTAMP NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY earnings_message_unique (message_id),
+  KEY earnings_operator_created_idx (operator_id, created_at),
+  KEY earnings_level_created_idx (level_id, created_at),
+  KEY earnings_status_idx (status, created_at),
+  CONSTRAINT earnings_message_fk FOREIGN KEY (message_id) REFERENCES messages (id) ON DELETE CASCADE,
+  CONSTRAINT earnings_operator_fk FOREIGN KEY (operator_id) REFERENCES operators (id) ON DELETE RESTRICT,
+  CONSTRAINT earnings_level_fk FOREIGN KEY (level_id) REFERENCES operator_levels (id) ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS operator_push_subscriptions (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   operator_id BIGINT UNSIGNED NOT NULL,
@@ -137,6 +186,14 @@ CREATE TABLE IF NOT EXISTS operator_push_subscriptions (
   KEY push_operator_idx (operator_id),
   CONSTRAINT push_operator_fk FOREIGN KEY (operator_id) REFERENCES operators (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Initial levels are only inserted when their slug is new, so reapplying this
+-- schema never overwrites rates that an administrator has edited.
+INSERT IGNORE INTO operator_levels (name, slug, description, rate_minor, currency, is_default)
+VALUES
+  ('Beginner', 'beginner', 'New operators building consistency and learning the workflow.', 5, 'EUR', TRUE),
+  ('Developing', 'developing', 'Operators who meet quality and reliability expectations.', 10, 'EUR', FALSE),
+  ('Experienced', 'experienced', 'Trusted operators with a strong history of quality replies.', 15, 'EUR', FALSE);
 
 CREATE TABLE IF NOT EXISTS integration_deliveries (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,

@@ -721,6 +721,14 @@ textarea.form-field { padding-top: 10px; height: auto; min-height: 86px; resize:
 .landing-icon.teal-icon { color: var(--teal); background: var(--teal-soft); }
 .landing-grid h2 { margin: 0 0 8px; font-size: 16px; letter-spacing: -.03em; }
 .landing-grid p { margin: 0; color: var(--ink-soft); font-size: 12px; line-height: 1.6; }
+.landing-earnings { display: grid; grid-template-columns: 1fr 1fr; gap: 55px; padding: 32px 0 78px; border-top: 1px solid var(--line); }
+.landing-earnings-copy h2 { max-width: 510px; margin: 12px 0 15px; font-size: clamp(25px, 3vw, 38px); line-height: 1.08; letter-spacing: -.055em; }
+.landing-earnings-copy p { max-width: 480px; margin: 0 0 24px; color: var(--ink-soft); font-size: 14px; line-height: 1.7; }
+.landing-level-list { align-self: center; border-top: 1px solid var(--line); }
+.landing-level-list > div { display: flex; gap: 17px; padding: 17px 0; border-bottom: 1px solid var(--line); }
+.level-number { color: var(--teal); font: 11px var(--app-font-mono); padding-top: 2px; }
+.landing-level-list strong { display: block; font-size: 13px; }
+.landing-level-list small { display: block; margin-top: 4px; color: var(--ink-soft); font-size: 11px; line-height: 1.45; }
 .landing-contact { display: flex; align-items: end; justify-content: space-between; gap: 32px; padding: 36px 0 88px; border-top: 1px solid var(--line); }
 .landing-contact h2 { max-width: 610px; }
 .landing-footer { padding: 20px 0 27px; border-top: 1px solid var(--line); color: var(--ink-soft); font: 10px var(--app-font-mono); letter-spacing: .05em; }
@@ -758,6 +766,17 @@ textarea.form-field { padding-top: 10px; height: auto; min-height: 86px; resize:
 .report-callout { display: flex; gap: 12px; margin: 8px 20px 20px; padding: 16px; border-radius: 8px; color: var(--teal); background: var(--teal-soft); }
 .report-callout strong { color: var(--ink); font-size: 12px; }
 .report-callout p { margin: 4px 0 0; color: var(--ink-soft); font-size: 11px; line-height: 1.5; }
+.compensation-stack { display: grid; gap: 16px; }
+.compensation-grid { display: grid; grid-template-columns: 1.05fr .95fr; gap: 16px; }
+.level-form { padding: 17px 20px; border-bottom: 1px solid var(--line); background: rgba(235,229,217,.25); }
+.level-form-grid { display: grid; grid-template-columns: 1fr 100px 70px; gap: 8px; align-items: center; margin-bottom: 10px; }
+.level-form-grid .level-description { grid-column: 1 / -1; }
+.checkbox-label { display: flex; align-items: center; gap: 6px; color: var(--ink-soft); font-size: 11px; white-space: nowrap; }
+.checkbox-label input { accent-color: var(--teal); }
+.default-label { display: inline-block; margin-left: 7px; padding: 3px 5px; border-radius: 4px; color: #6c4e1c; background: var(--amber-soft); font: 9px var(--app-font-mono); text-transform: uppercase; }
+.compensation-table { min-width: 620px; }
+.money-cell { font-weight: 700; white-space: nowrap !important; }
+.money-cell small { display: block; margin-top: 3px; color: var(--ink-soft); font-size: 10px; font-weight: 400; }
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (max-width: 720px) {
   .landing-nav, .landing-footer, .landing-main { width: min(100% - 32px, 1180px); }
@@ -768,6 +787,7 @@ textarea.form-field { padding-top: 10px; height: auto; min-height: 86px; resize:
   .landing-hero p { font-size: 16px; }
   .landing-statement { grid-template-columns: 1fr; gap: 22px; padding-bottom: 48px; }
   .landing-grid { grid-template-columns: 1fr; padding-bottom: 35px; }
+  .landing-earnings { grid-template-columns: 1fr; gap: 32px; padding-bottom: 55px; }
   .landing-contact { align-items: flex-start; flex-direction: column; padding-bottom: 58px; }
   .landing-footer { align-items: flex-start; flex-direction: column; gap: 7px; }
   .auth-card { padding: 26px 21px; }
@@ -777,4 +797,7 @@ textarea.form-field { padding-top: 10px; height: auto; min-height: 86px; resize:
   .conversation-actions { flex-wrap: wrap; }
   .report-list { grid-template-columns: 1fr; }
   .report-columns { grid-template-columns: 1fr; }
+  .compensation-grid { grid-template-columns: 1fr; }
+  .level-form-grid { grid-template-columns: 1fr 1fr; }
+  .level-form-grid .level-description { grid-column: 1 / -1; }
 }

@@ -17,10 +17,18 @@ The project uses two workflows:
 
 The web client proxies `/api` requests to the API.
 
+Replit is the development and review environment. Production runs on the VPS:
+review changes here, push them to GitHub, then pull and restart the application
+on the VPS. The production domain and VPS database are not expected to be
+reachable from the Replit preview.
+
 The public landing page includes search-friendly metadata, structured job
 posting data, and a sitemap. The administrator control room includes a
 Pay & levels tab: create levels with per-delivered-message rates, assign a
 level to each operator, and mark ledger entries pending, paid, or void.
+Operators also have an Earnings area showing their current level, monthly and
+lifetime totals, pending and paid balances, recent delivered replies, and the
+monthly payout schedule on the 10th.
 
 ## Database requirement
 

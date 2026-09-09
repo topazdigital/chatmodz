@@ -203,6 +203,17 @@ function compensationOperator(row: any) {
   }
 }
 
+function payoutSchedule() {
+  const now = new Date()
+  const next = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 10))
+  if (now.getUTCDate() >= 10) next.setUTCMonth(next.getUTCMonth() + 1)
+  return {
+    day: 10,
+    label: "Paid monthly on the 10th",
+    nextDate: next.toISOString().slice(0, 10),
+  }
+}
+
 function secretFor(site: any) {
   const envKey = typeof site.secret_env_key === "string" ? site.secret_env_key : ""
   return envKey ? process.env[envKey] || "" : ""
@@ -707,6 +718,82 @@ router.post("/integrations/:siteKey/messages", async (req, res) => {
     if (failConfiguration(res, error)) return
     if (error?.code === "ER_DUP_ENTRY") return res.status(202).json({ accepted: true, duplicate: true })
     res.status(500).json({ error: "Could not process message event" })
+  }
+})
+
+router.get("/earnings", requireChatmodzAuth, async (req, res) => {
+  const operatorId = req.chatmodzOperator!.id
+  const schedule = payoutSchedule()
+  if (isDemoMode()) {
+    const level = demoLevels.find((item) => item.id === demoOperatorLevels.get(operatorId)) || demoLevels.find((item) => item.is_default) || demoLevels[0]
+    return res.json({
+      level: level ? compensationLevel(level) : null,
+      schedule,
+      summary: { currentMonthMinor: 0, pendingMinor: 0, paidMinor: 0, lifetimeMinor: 0, totalMessages: 0 },
+      recent: [],
+      demo: true,
+    })
+  }
+  try {
+    const [level] = await query<any>(
+      `SELECT l.id, l.name, l.description, l.rate_minor, l.currency
+       FROM operator_levels l
+       LEFT JOIN operator_level_assignments a ON a.level_id = l.id AND a.operator_id = ?
+       WHERE l.active = 1 AND (a.operator_id IS NOT NULL OR l.is_default = 1)
+       ORDER BY CASE WHEN a.operator_id IS NOT NULL THEN 0 ELSE 1 END, l.id
+       LIMIT 1`,
+      [operatorId],
+    )
+    const [summary] = await query<any>(
+      `SELECT
+         COALESCE(SUM(CASE WHEN status <> 'void' THEN rate_minor ELSE 0 END), 0) AS lifetime_minor,
+         COALESCE(SUM(CASE WHEN status = 'pending' THEN rate_minor ELSE 0 END), 0) AS pending_minor,
+         COALESCE(SUM(CASE WHEN status = 'paid' THEN rate_minor ELSE 0 END), 0) AS paid_minor,
+         COALESCE(SUM(CASE WHEN status <> 'void' AND created_at >= DATE_FORMAT(CURRENT_DATE, '%Y-%m-01') THEN rate_minor ELSE 0 END), 0) AS current_month_minor,
+         COUNT(CASE WHEN status <> 'void' THEN 1 END) AS total_messages
+       FROM operator_earnings
+       WHERE operator_id = ?`,
+      [operatorId],
+    )
+    const recent = await query<any>(
+      `SELECT e.id, e.message_id, e.level_id, l.name AS level_name, e.rate_minor, e.currency,
+          e.status, e.paid_at, e.created_at
+       FROM operator_earnings e
+       JOIN operator_levels l ON l.id = e.level_id
+       WHERE e.operator_id = ?
+       ORDER BY e.created_at DESC
+       LIMIT 100`,
+      [operatorId],
+    )
+    res.json({
+      level: level ? {
+        id: Number(level.id),
+        name: level.name,
+        description: level.description || "",
+        rateMinor: Number(level.rate_minor || 0),
+        currency: String(level.currency || "EUR").toUpperCase(),
+      } : null,
+      schedule,
+      summary: {
+        currentMonthMinor: Number(summary?.current_month_minor || 0),
+        pendingMinor: Number(summary?.pending_minor || 0),
+        paidMinor: Number(summary?.paid_minor || 0),
+        lifetimeMinor: Number(summary?.lifetime_minor || 0),
+        totalMessages: Number(summary?.total_messages || 0),
+      },
+      recent: recent.map((row) => ({
+        id: Number(row.id),
+        messageId: Number(row.message_id),
+        levelName: row.level_name,
+        rateMinor: Number(row.rate_minor || 0),
+        currency: String(row.currency || "EUR").toUpperCase(),
+        status: row.status,
+        paidAt: row.paid_at,
+        createdAt: row.created_at,
+      })),
+    })
+  } catch (error) {
+    if (!failConfiguration(res, error)) res.status(500).json({ error: "Earnings unavailable" })
   }
 })
 

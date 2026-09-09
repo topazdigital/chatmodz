@@ -766,6 +766,21 @@ textarea.form-field { padding-top: 10px; height: auto; min-height: 86px; resize:
 .report-callout { display: flex; gap: 12px; margin: 8px 20px 20px; padding: 16px; border-radius: 8px; color: var(--teal); background: var(--teal-soft); }
 .report-callout strong { color: var(--ink); font-size: 12px; }
 .report-callout p { margin: 4px 0 0; color: var(--ink-soft); font-size: 11px; line-height: 1.5; }
+.payout-callout { display: flex; align-items: center; gap: 13px; margin-bottom: 16px; padding: 15px 18px; border: 1px solid rgba(77,139,133,.22); border-radius: 9px; color: var(--teal); background: var(--teal-soft); }
+.payout-callout > div { flex: 1; }
+.payout-callout strong { color: var(--ink); font-size: 13px; }
+.payout-callout p { margin: 4px 0 0; color: var(--ink-soft); font-size: 11px; line-height: 1.45; }
+.payout-callout > .tiny-text { color: var(--teal); white-space: nowrap; }
+.earnings-grid { display: grid; grid-template-columns: 1.1fr .9fr; gap: 16px; margin: 16px 0; }
+.earnings-level-content { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 20px; }
+.earnings-level-content h2 { margin: 0 0 6px; font-size: 24px; letter-spacing: -.045em; }
+.earnings-level-content p { margin: 0; color: var(--ink-soft); font-size: 12px; line-height: 1.5; }
+.earnings-rate { color: var(--teal); font-size: 22px; text-align: right; white-space: nowrap; }
+.earnings-rate small { display: block; margin-top: 4px; color: var(--ink-soft); font-size: 10px; font-weight: 400; }
+.schedule-detail { display: grid; gap: 7px; padding: 21px 20px; }
+.schedule-detail strong { font-size: 16px; }
+.schedule-detail span { color: var(--ink-soft); font-size: 12px; line-height: 1.5; }
+.earnings-table { min-width: 620px; }
 .compensation-stack { display: grid; gap: 16px; }
 .compensation-grid { display: grid; grid-template-columns: 1.05fr .95fr; gap: 16px; }
 .level-form { padding: 17px 20px; border-bottom: 1px solid var(--line); background: rgba(235,229,217,.25); }
@@ -797,6 +812,11 @@ textarea.form-field { padding-top: 10px; height: auto; min-height: 86px; resize:
   .conversation-actions { flex-wrap: wrap; }
   .report-list { grid-template-columns: 1fr; }
   .report-columns { grid-template-columns: 1fr; }
+  .payout-callout { align-items: flex-start; flex-wrap: wrap; }
+  .payout-callout > .tiny-text { width: 100%; margin-left: 33px; }
+  .earnings-grid { grid-template-columns: 1fr; }
+  .earnings-level-content { align-items: flex-start; flex-direction: column; }
+  .earnings-rate { text-align: left; }
   .compensation-grid { grid-template-columns: 1fr; }
   .level-form-grid { grid-template-columns: 1fr 1fr; }
   .level-form-grid .level-description { grid-column: 1 / -1; }

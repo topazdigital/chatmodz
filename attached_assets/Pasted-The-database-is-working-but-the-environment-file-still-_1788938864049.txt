@@ -1,0 +1,78 @@
+The database is working, but the environment file still contains template values. Do not start the API yet.
+
+1. Generate a JWT secret
+Run:
+
+openssl rand -hex 32
+
+Copy the generated value temporarily.
+
+2. Edit the environment file
+nano /home/admin/apps/chatmodz/.env.production
+
+Replace every placeholder so the file has this structure:
+
+NODE_ENV=production
+PORT=8787
+CHATMODZ_DATABASE_URL="mysql://admin_chatmodz:URL_ENCODED_DATABASE_PASSWORD@localhost:3306/admin_chatmodz"
+CHATMODZ_JWT_SECRET="PASTE_THE_GENERATED_SECRET_HERE"
+CHATMODZ_ADMIN_NAME="Chatmodz Administrator"
+CHATMODZ_ADMIN_EMAIL="YOUR_REAL_ADMIN_EMAIL"
+CHATMODZ_ADMIN_PASSWORD="YOUR_NEW_ADMIN_PASSWORD"
+
+Important:
+
+Use the existing database username: admin_chatmodz
+Use the existing database name: admin_chatmodz
+Encode the @ in the database password as %40 inside the URL
+Replace the admin email and admin password
+Do not send this file or its contents here
+Save Nano:
+
+Press Ctrl+O
+Press Enter
+Press Ctrl+X
+3. Check that placeholders are gone
+Run:
+
+ENV_FILE="/home/admin/apps/chatmodz/.env.production"
+if grep -qE 'REPLACE_WITH|YOUR_|NEW_UNEXPOSED|CHATMODZ_DB_PASSWORD|PASTE_' "$ENV_FILE"; then
+  echo "Placeholders still remain. Edit the file again."
+  exit 1
+else
+  echo "All placeholders have been replaced."
+fi
+
+Then secure the file:
+
+chmod 600 /home/admin/apps/chatmodz/.env.production
+chown admin:admin /home/admin/apps/chatmodz/.env.production
+
+Once it says:
+
+All placeholders have been replaced.
+
+the next step will be starting the API on port 8787.
+
+
+
+Worked for 14 seconds
+NODE_ENV=production PORT=8787
+
+CHATMODZ_DATABASE_URL="mysql://admin_chatmodz:URL_ENCODED_DATABASE_PASSWORD@localhost:3306/admin_chatmodz"
+
+CHATMODZ_JWT_SECRET="929628980a79380f252d19e9be0cad7f5d90cab2eed2fb09a3f7ab2022cf42aa"
+
+CHATMODZ_ADMIN_NAME="admin" CHATMODZ_ADMIN_EMAIL="patrickndungu.pnn@gmail.com" CHATMODZ_ADMIN_PASSWORD="dj@Topaz2016"
+
+These are the credentials help me insert because I can't type one by one in nano
+
+Free
+Just now
+
+Worked for 1 second
+You've reached your daily free quota limit. It will reset at 12:00 AM UTC.
+
+
+
+

@@ -1,0 +1,1135 @@
+Windows PowerShell
+Copyright (C) Microsoft Corporation. All rights reserved.
+
+Try the new cross-platform PowerShell https://aka.ms/pscore6
+
+PS C:\Users\Topaz Digital> ssh root@157.250.205.180
+root@157.250.205.180's password:
+
+--
+The default directadmin username is admin
+Directadmin defaults to installing CSF firewall - failed logins may be temp blocked in /etc/csf/csf.deny
+--
+Last failed login: Wed Sep  9 01:47:29 EDT 2026 from 45.171.132.162 on ssh:notty
+There were 39 failed login attempts since the last successful login.
+Last login: Tue Sep  8 13:26:30 2026 from 66.45.228.251
+[root@mail ~]# echo "===== SERVER ====="
+hostname
+whoami
+pwd
+
+echo
+echo "===== LISTENING PORTS ====="
+ss -lntp
+
+echo
+echo "===== RUNNING WEB/NODE SERVICES ====="
+ps aux | grep -E 'nginx|apache2|httpd|node|pm2|php-fpm|directadmin' | grep -v grep || true
+
+echo
+echo "===== DIRECTADMIN DOMAINS ====="
+find /home -mindepth 4 -maxdepth 5 -type d -path '*/domains/*/public_html' -print 2>/dev/null
+
+echo
+echo "===== CHATMODZ DIRECTORY ====="
+ls -la /home/admin/domains/chatmodz.com 2>/dev/null || true
+ls -la /home/admin/domains/chatmodz.com/public_html 2>/dev/null || true
+===== SERVER =====
+mail.betcheza.co.ke
+root
+/root
+
+===== LISTENING PORTS =====
+State       Recv-Q      Send-Q                                   Local Address:Port              Peer Address:Port      Process
+LISTEN      0           9                                              0.0.0.0:21                     0.0.0.0:*          users:(("pure-ftpd",pid=662,fd=4))
+LISTEN      0           128                                            0.0.0.0:22                     0.0.0.0:*          users:(("sshd",pid=3265595,fd=7))
+LISTEN      0           20                                             0.0.0.0:25                     0.0.0.0:*          users:(("exim",pid=639,fd=4))
+LISTEN      0           2048                                           0.0.0.0:110                    0.0.0.0:*          users:(("pop3-login",pid=3989233,fd=9),("pop3-login",pid=3988500,fd=9),("pop3-login",pid=3986292,fd=9),("pop3-login",pid=3985485,fd=9),("pop3-login",pid=3822276,fd=9),("pop3-login",pid=3326898,fd=9),("pop3-login",pid=3326896,fd=9),("pop3-login",pid=3326895,fd=9),("pop3-login",pid=3326729,fd=9),("pop3-login",pid=3326728,fd=9),("pop3-login",pid=3326727,fd=9),("pop3-login",pid=3326726,fd=9),("pop3-login",pid=3326725,fd=9),("pop3-login",pid=3326724,fd=9),("pop3-login",pid=3326721,fd=9),("pop3-login",pid=3326720,fd=9),("dovecot",pid=634,fd=50))
+LISTEN      0           2048                                           0.0.0.0:143                    0.0.0.0:*          users:(("imap-login",pid=4019457,fd=9),("imap-login",pid=4018832,fd=9),("imap-login",pid=4016497,fd=9),("imap-login",pid=3992889,fd=9),("imap-login",pid=3990653,fd=9),("imap-login",pid=3989884,fd=9),("imap-login",pid=3989151,fd=9),("imap-login",pid=3988389,fd=9),("imap-login",pid=3978513,fd=9),("imap-login",pid=3974701,fd=9),("imap-login",pid=3973998,fd=9),("imap-login",pid=3917926,fd=9),("imap-login",pid=3512331,fd=9),("imap-login",pid=3326894,fd=9),("imap-login",pid=3326893,fd=9),("imap-login",pid=3326892,fd=9),("dovecot",pid=634,fd=46))
+LISTEN      0           20                                             0.0.0.0:465                    0.0.0.0:*          users:(("exim",pid=639,fd=6))
+LISTEN      0           20                                             0.0.0.0:587                    0.0.0.0:*          users:(("exim",pid=639,fd=5))
+LISTEN      0           511                                            0.0.0.0:5000                   0.0.0.0:*          users:(("next-server (v1",pid=3611716,fd=18))
+LISTEN      0           2048                                           0.0.0.0:993                    0.0.0.0:*          users:(("imap-login",pid=4019457,fd=11),("imap-login",pid=4018832,fd=11),("imap-login",pid=4016497,fd=11),("imap-login",pid=3992889,fd=11),("imap-login",pid=3990653,fd=11),("imap-login",pid=3989884,fd=11),("imap-login",pid=3989151,fd=11),("imap-login",pid=3988389,fd=11),("imap-login",pid=3978513,fd=11),("imap-login",pid=3974701,fd=11),("imap-login",pid=3973998,fd=11),("imap-login",pid=3917926,fd=11),("imap-login",pid=3512331,fd=11),("imap-login",pid=3326894,fd=11),("imap-login",pid=3326893,fd=11),("imap-login",pid=3326892,fd=11),("dovecot",pid=634,fd=48))
+LISTEN      0           2048                                           0.0.0.0:995                    0.0.0.0:*          users:(("pop3-login",pid=3989233,fd=11),("pop3-login",pid=3988500,fd=11),("pop3-login",pid=3986292,fd=11),("pop3-login",pid=3985485,fd=11),("pop3-login",pid=3822276,fd=11),("pop3-login",pid=3326898,fd=11),("pop3-login",pid=3326896,fd=11),("pop3-login",pid=3326895,fd=11),("pop3-login",pid=3326729,fd=11),("pop3-login",pid=3326728,fd=11),("pop3-login",pid=3326727,fd=11),("pop3-login",pid=3326726,fd=11),("pop3-login",pid=3326725,fd=11),("pop3-login",pid=3326724,fd=11),("pop3-login",pid=3326721,fd=11),("pop3-login",pid=3326720,fd=11),("dovecot",pid=634,fd=52))
+LISTEN      0           511                                          127.0.0.1:6379                   0.0.0.0:*          users:(("redis-server",pid=705,fd=6))
+LISTEN      0           10                                     157.250.205.180:53                     0.0.0.0:*          users:(("named",pid=1590544,fd=40))
+LISTEN      0           10                                     157.250.205.180:53                     0.0.0.0:*          users:(("named",pid=1590544,fd=41))
+LISTEN      0           511                                            0.0.0.0:3005                   0.0.0.0:*          users:(("next-server (v1",pid=3996192,fd=18))
+LISTEN      0           511                                            0.0.0.0:3000                   0.0.0.0:*          users:(("next-server (v1",pid=3611715,fd=18))
+LISTEN      0           511                                            0.0.0.0:3001                   0.0.0.0:*          users:(("next-server (v1",pid=3996154,fd=19))
+LISTEN      0           4096                                         127.0.0.1:783                    0.0.0.0:*          users:(("spamd child",pid=213670,fd=5),("spamd child",pid=3550,fd=5),("spamd",pid=1139,fd=5))
+LISTEN      0           4096                                         127.0.0.1:953                    0.0.0.0:*          users:(("named",pid=1590544,fd=31))
+LISTEN      0           80                                             0.0.0.0:3306                   0.0.0.0:*          users:(("mysqld",pid=887,fd=23))
+LISTEN      0           10                                           127.0.0.1:53                     0.0.0.0:*          users:(("named",pid=1590544,fd=34))
+LISTEN      0           10                                           127.0.0.1:53                     0.0.0.0:*          users:(("named",pid=1590544,fd=35))
+LISTEN      0           9                                                 [::]:21                        [::]:*          users:(("pure-ftpd",pid=662,fd=5))
+LISTEN      0           128                                               [::]:22                        [::]:*          users:(("sshd",pid=3265595,fd=8))
+LISTEN      0           511                                                  *:80                           *:*          users:(("httpd",pid=4002006,fd=4),("httpd",pid=4001924,fd=4),("httpd",pid=4001923,fd=4),("httpd",pid=4001922,fd=4),("httpd",pid=4001921,fd=4),("httpd",pid=4001760,fd=4),("httpd",pid=3386208,fd=4))
+LISTEN      0           2048                                              [::]:110                       [::]:*          users:(("pop3-login",pid=3989233,fd=10),("pop3-login",pid=3988500,fd=10),("pop3-login",pid=3986292,fd=10),("pop3-login",pid=3985485,fd=10),("pop3-login",pid=3822276,fd=10),("pop3-login",pid=3326898,fd=10),("pop3-login",pid=3326896,fd=10),("pop3-login",pid=3326895,fd=10),("pop3-login",pid=3326729,fd=10),("pop3-login",pid=3326728,fd=10),("pop3-login",pid=3326727,fd=10),("pop3-login",pid=3326726,fd=10),("pop3-login",pid=3326725,fd=10),("pop3-login",pid=3326724,fd=10),("pop3-login",pid=3326721,fd=10),("pop3-login",pid=3326720,fd=10),("dovecot",pid=634,fd=51))
+LISTEN      0           2048                                              [::]:143                       [::]:*          users:(("imap-login",pid=4019457,fd=10),("imap-login",pid=4018832,fd=10),("imap-login",pid=4016497,fd=10),("imap-login",pid=3992889,fd=10),("imap-login",pid=3990653,fd=10),("imap-login",pid=3989884,fd=10),("imap-login",pid=3989151,fd=10),("imap-login",pid=3988389,fd=10),("imap-login",pid=3978513,fd=10),("imap-login",pid=3974701,fd=10),("imap-login",pid=3973998,fd=10),("imap-login",pid=3917926,fd=10),("imap-login",pid=3512331,fd=10),("imap-login",pid=3326894,fd=10),("imap-login",pid=3326893,fd=10),("imap-login",pid=3326892,fd=10),("dovecot",pid=634,fd=47))
+LISTEN      0           511                                                  *:443                          *:*          users:(("httpd",pid=4002006,fd=8),("httpd",pid=4001924,fd=8),("httpd",pid=4001923,fd=8),("httpd",pid=4001922,fd=8),("httpd",pid=4001921,fd=8),("httpd",pid=4001760,fd=8),("httpd",pid=3386208,fd=8))
+LISTEN      0           4096                                             [::1]:953                       [::]:*          users:(("named",pid=1590544,fd=54))
+LISTEN      0           10                                               [::1]:53                        [::]:*          users:(("named",pid=1590544,fd=45))
+LISTEN      0           10                                               [::1]:53                        [::]:*          users:(("named",pid=1590544,fd=44))
+LISTEN      0           2048                                              [::]:993                       [::]:*          users:(("imap-login",pid=4019457,fd=12),("imap-login",pid=4018832,fd=12),("imap-login",pid=4016497,fd=12),("imap-login",pid=3992889,fd=12),("imap-login",pid=3990653,fd=12),("imap-login",pid=3989884,fd=12),("imap-login",pid=3989151,fd=12),("imap-login",pid=3988389,fd=12),("imap-login",pid=3978513,fd=12),("imap-login",pid=3974701,fd=12),("imap-login",pid=3973998,fd=12),("imap-login",pid=3917926,fd=12),("imap-login",pid=3512331,fd=12),("imap-login",pid=3326894,fd=12),("imap-login",pid=3326893,fd=12),("imap-login",pid=3326892,fd=12),("dovecot",pid=634,fd=49))
+LISTEN      0           2048                                              [::]:995                       [::]:*          users:(("pop3-login",pid=3989233,fd=12),("pop3-login",pid=3988500,fd=12),("pop3-login",pid=3986292,fd=12),("pop3-login",pid=3985485,fd=12),("pop3-login",pid=3822276,fd=12),("pop3-login",pid=3326898,fd=12),("pop3-login",pid=3326896,fd=12),("pop3-login",pid=3326895,fd=12),("pop3-login",pid=3326729,fd=12),("pop3-login",pid=3326728,fd=12),("pop3-login",pid=3326727,fd=12),("pop3-login",pid=3326726,fd=12),("pop3-login",pid=3326725,fd=12),("pop3-login",pid=3326724,fd=12),("pop3-login",pid=3326721,fd=12),("pop3-login",pid=3326720,fd=12),("dovecot",pid=634,fd=53))
+LISTEN      0           511                                                  *:18080                        *:*          users:(("node /home/admi",pid=3996078,fd=19))
+LISTEN      0           4096                                                 *:2222                         *:*          users:(("directadmin",pid=3801900,fd=8))
+LISTEN      0           511                                              [::1]:6379                      [::]:*          users:(("redis-server",pid=705,fd=7))
+LISTEN      0           10                     [fe80::216:3eff:fe30:42bc]%eth0:53                        [::]:*          users:(("named",pid=1590544,fd=53))
+LISTEN      0           10                     [fe80::216:3eff:fe30:42bc]%eth0:53                        [::]:*          users:(("named",pid=1590544,fd=52))
+LISTEN      0           511                                                  *:3002                         *:*          users:(("node",pid=3996135,fd=19))
+LISTEN      0           511                                                  *:7080                         *:*          users:(("node /home/admi",pid=3996141,fd=25))
+LISTEN      0           511                                                  *:7081                         *:*          users:(("node /home/admi",pid=3996129,fd=19))
+LISTEN      0           10                [2604:a00:50:210:216:3eff:fe30:42bc]:53                        [::]:*          users:(("named",pid=1590544,fd=49))
+LISTEN      0           10                [2604:a00:50:210:216:3eff:fe30:42bc]:53                        [::]:*          users:(("named",pid=1590544,fd=48))
+
+===== RUNNING WEB/NODE SERVICES =====
+root         645  0.0  0.6 452908 38980 ?        Ss   Aug08   4:09 php-fpm: master process (/usr/local/php72/etc/php-fpm.conf)
+root         648  0.0  0.8 469192 50624 ?        Ss   Aug08   4:01 php-fpm: master process (/usr/local/php73/etc/php-fpm.conf)
+root         649  0.0  0.8 471516 51644 ?        Ss   Aug08   4:09 php-fpm: master process (/usr/local/php74/etc/php-fpm.conf)
+root         651  0.0  0.9 475976 53660 ?        Ss   Aug08   7:24 php-fpm: master process (/usr/local/php81/etc/php-fpm.conf)
+root         652  0.0  0.9 478200 54580 ?        Ss   Aug08   4:07 php-fpm: master process (/usr/local/php83/etc/php-fpm.conf)
+nginx_u+     788  0.0  0.0  14612   872 ?        S    Aug08   0:00 unit: controller
+nginx_u+     792  0.0  0.0  14756  1120 ?        S    Aug08   0:00 unit: router
+root     3386208  0.0  0.9  71980 56600 ?        Ss   Sep08   0:06 /usr/sbin/httpd -DFOREGROUND
+admin    3611613  2.4  0.7 1302896 45100 ?       Ssl  Aug21 679:51 PM2 v7.0.3: God Daemon (/home/admin/.pm2)
+root     3801900  0.2  1.2 2702428 73512 ?       Ssl  Sep08   0:50 /usr/local/directadmin/directadmin server --syslog
+apache   3922798  0.6  1.4 2158180 84220 ?       Sl   00:12   0:52 /usr/sbin/httpd -DFOREGROUND
+admin    3996078  0.3  1.5 11674588 91384 ?      Ssl  01:58   0:05 node /home/admin/api-server/dist/index.mjs
+root     3996112  1.5  1.1 1036560 64428 ?       Ssl  01:58   0:28 PM2 v7.0.3: God Daemon (/root/.pm2)
+root     3996129  0.4  2.0 11815940 119360 ?     Ssl  01:58   0:07 node /home/admin/domains/naughtyhaughty.com/public_html/ar
+root     3996135  0.0  1.2 11533492 75404 ?      Ssl  01:58   0:01 /usr/bin/node --enable-source-maps /root/crashbet/artifacts/api-server/dist/index.mjs
+root     3996141  2.5  3.2 11908048 190336 ?     Ssl  01:58   0:48 node /home/admin/domains/richdatingnetwork.com/public_html
+nobody   3999856  0.0  0.4 2038440 27972 ?       Ssl  02:03   0:00 /usr/local/directadmin/directadmin legacy-handler --config=data/admin/runtime.directadmin.conf --legacy --syslog
+nobody   4000025  0.0  0.4 2038440 28324 ?       Ssl  02:03   0:00 /usr/local/directadmin/directadmin legacy-handler --config=data/admin/runtime.directadmin.conf --legacy --syslog
+apache   4001760  0.1  1.2 2263940 69768 ?       Sl   02:05   0:01 /usr/sbin/httpd -DFOREGROUND
+apache   4001921  0.1  1.1 2132636 69412 ?       Sl   02:05   0:01 /usr/sbin/httpd -DFOREGROUND
+apache   4001922  0.2  1.1 2132720 69608 ?       Sl   02:05   0:02 /usr/sbin/httpd -DFOREGROUND
+apache   4001923  0.1  1.1 2132916 69236 ?       Sl   02:05   0:01 /usr/sbin/httpd -DFOREGROUND
+apache   4001924  0.0  1.1 2132720 69016 ?       Sl   02:05   0:01 /usr/sbin/httpd -DFOREGROUND
+apache   4002006  0.2  1.2 2133596 71700 ?       Sl   02:05   0:03 /usr/sbin/httpd -DFOREGROUND
+webapps  4012029  0.0  0.6 478700 40540 ?        S    02:18   0:00 php-fpm: pool webapps
+root     4020111  0.0  1.4 1070372 84204 ?       Rsl  02:29   0:00 node /home/admin/wet3camp-build/artifacts/api-server/dist/index.mjs
+
+===== DIRECTADMIN DOMAINS =====
+/home/admin_naughtyhaughty/domains/naughtyhaughty.com/public_html
+/home/admin/domains/betcheza.co.ke/public_html
+/home/admin/domains/chatmodz.com/public_html
+/home/admin/domains/wet3.camp/public_html
+/home/admin/domains/perigonproperties.co.ke/public_html
+/home/admin/domains/aviator.betcheza.co.ke/public_html
+/home/admin/domains/lynnietravisadventures.com/public_html
+/home/admin/domains/richdatingnetwork.com/public_html
+/home/admin/domains/naughtyhaughty.com/public_html
+/home/admin/domains/test.richdatingnetwork.com/public_html
+/home/naughtyhaughty/domains/naughtyhaughty.com/public_html
+
+===== CHATMODZ DIRECTORY =====
+total 16
+drwx--x--x   4 admin admin  4096 Sep  9 02:03 .
+drwxr-x---. 11 admin access 4096 Sep  9 02:03 ..
+lrwxrwxrwx   1 admin admin    13 Sep  9 02:03 private_html -> ./public_html
+drwx--x--x   3 admin admin  4096 Sep  9 02:03 public_ftp
+drwxr-xr-x   2 admin admin  4096 Sep  9 02:25 public_html
+total 8
+drwxr-xr-x 2 admin admin 4096 Sep  9 02:25 .
+drwx--x--x 4 admin admin 4096 Sep  9 02:03 ..
+[root@mail ~]# set -e
+               set -e
+APP="/home/admin/apps/chatmodz"
+APP="/home/admin/apps/chatmodz"
+install -d -o admin -g admin /home/admin/apps
+install -d -o admin -g admin /home/admin/apps
+if [ -e "$APP" ] && [ ! -d "$APP/.git" ]; then
+if [ -e "$APP" ] && [ ! -d "$APP/.git" ]; thenpository."
+  echo "ERROR: $APP exists but is not a Git repository."
+  exit 1
+fi
+if [ -d "$APP/.git" ]; then
+if [ -d "$APP/.git" ]; thenstatus --porcelain)" ]; then
+  if [ -n "$(git -C "$APP" status --porcelain)" ]; thenerwrite them."
+    echo "ERROR: $APP has local changes. Refusing to overwrite them."
+    git -C "$APP" status --short
+    exit 1
+  fi
+  git -C "$APP" checkout main
+  git -C "$APP" checkout mainy origin main
+  git -C "$APP" pull --ff-only origin main
+elset clone --branch main https://github.com/topazdigital/chatmodz.git "$APP"
+  git clone --branch main https://github.com/topazdigital/chatmodz.git "$APP"
+fi
+chown -R admin:admin "$APP"
+chown -R admin:admin "$APP"
+echo "Node:"
+echo "Node:"on
+node --version
+echo "pnpm:"
+echo "pnpm:"on
+pnpm --version
+Cloning into '/home/admin/apps/chatmodz'...
+remote: Enumerating objects: 228, done.
+remote: Counting objects: 100% (228/228), done.
+remote: Compressing objects: 100% (158/158), done.
+remote: Total 228 (delta 74), reused 212 (delta 58), pack-reused 0 (from 0)
+Receiving objects: 100% (228/228), 3.59 MiB | 17.83 MiB/s, done.
+Resolving deltas: 100% (74/74), done.
+Node:
+v20.20.2
+pnpm:
+10.34.5
+[root@mail ~]# su - admin -s /bin/bash -c '
+set -e
+cd /home/admin/apps/chatmodz
+
+pnpm install --frozen-lockfile
+
+NODE_ENV=production \
+PORT=8787 \
+BASE_PATH=/ \
+pnpm --filter @workspace/chatmodz run build
+
+NODE_ENV=production \
+pnpm --filter @workspace/chatmodz-api run build
+
+test -f artifacts/chatmodz/dist/public/index.html
+test -f artifacts/chatmodz-api/dist/index.mjs
+
+echo "Chatmodz build completed successfully."
+'
+Scope: all 3 workspace projects
+Lockfile is up to date, resolution step is skipped
+Packages: +342
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+   ╭─────────────────────────────────────────╮
+   │                                         │
+   │   Update available! 10.34.5 → 12.3.4.   │
+   │   Changelog: https://pnpm.io/v/12.3.4   │
+   │    To update, run: pnpm add -g pnpm     │
+   │                                         │
+   ╰─────────────────────────────────────────╯
+
+Downloading react-icons@5.7.0: 22.77 MB/22.77 MB, done
+Progress: resolved 342, reused 178, downloaded 164, added 342, done
+╭ Warning ───────────────────────────────────────────────────────────────────────────────────╮
+│                                                                                            │
+│   Ignored build scripts: bcrypt@6.0.0, esbuild@0.27.7.                                     │
+│   Run "pnpm approve-builds" to pick which dependencies should be allowed to run scripts.   │
+│                                                                                            │
+╰────────────────────────────────────────────────────────────────────────────────────────────╯
+Done in 16.6s using pnpm v10.34.5
+
+> @workspace/chatmodz@0.0.0 build /home/admin/apps/chatmodz/artifacts/chatmodz
+> vite build --config vite.config.ts
+
+vite v7.3.6 building client environment for production...
+✓ 1766 modules transformed.
+dist/public/index.html                   3.13 kB │ gzip:   1.23 kB
+dist/public/assets/index-DiKUPOPl.css  120.66 kB │ gzip:  21.27 kB
+dist/public/assets/index-BgdCF_W7.js   379.75 kB │ gzip: 119.01 kB
+✓ built in 12.75s
+
+> @workspace/chatmodz-api@1.0.0 build /home/admin/apps/chatmodz/artifacts/chatmodz-api
+> node build.mjs
+
+Chatmodz build completed successfully.
+[root@mail ~]# httpd -M 2>/dev/null | grep -E 'rewrite_module|proxy_module|proxy_http_module' || true
+ proxy_module (static)
+ proxy_http_module (static)
+ rewrite_module (static)
+[root@mail ~]# cat > /home/admin/domains/chatmodz.com/public_html/.htaccess <<'EOF'
+DirectoryIndex index.html
+
+RewriteEngine On
+
+# Send Chatmodz API requests to the Node API.
+RewriteRule ^api/(.*)$ http://127.0.0.1:8787/api/$1 [P,L,NE]
+
+# API health check.
+RewriteRule ^healthz$ http://127.0.0.1:8787/healthz [P,L,NE]
+
+# Support React client-side routes such as /login.
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule . /index.html [L]
+EOF
+
+chown admin:admin /home/admin/domains/chatmodz.com/public_html/.htaccess
+chmod 644 /home/admin/domains/chatmodz.com/public_html/.htaccess
+NODE_ENV=production
+PORT=8787
+
+CHATMODZ_DATABASE_URL="mysql://CHATMODZ_DB_USER:CHATMODZ_DB_PASSWORD@127.0.0.1:3306/chatmodz"
+
+CHATMODZ_JWT_SECRET="REPLACE_WITH_A_LONG_RANDOM_SECRET"
+
+CHATMODZ_ADMIN_NAME="Chatmodz Administrator"
+CHATMODZ_ADMIN_EMAIL="REPLACE_WITH_YOUR_ADMIN_EMAIL"
+CHATMODZ_ADMIN_PASSWORD="REPLACE_WITH_A_PASSWORD_AT_LEAST_10_CHARACTERS"
+EOF
+
+chown admin:admin /home/admin/apps/chatmodz/.env.production
+chmod 600 /home/admin/apps/chatmodz/.env.production
+[root@mail ~]# CREATE DATABASE IF NOT EXISTS chatmodz
+  CHARACTER SET utf8mb4
+  COLLATE utf8mb4_unicode_ci;
+
+CREATE USER IF NOT EXISTS 'chatmodz_app'@'127.0.0.1'
+  IDENTIFIED BY 'dj@Topaz2016';
+
+GRANT ALL PRIVILEGES ON chatmodz.*
+  TO 'chatmodz_app'@'127.0.0.1';
+
+FLUSH PRIVILEGES;
+EXIT;
+-bash: CREATE: command not found
+Connection to 157.250.205.180 closed.
+PS C:\Users\Topaz Digital> ssh root@157.250.205.180
+root@157.250.205.180's password:
+
+--
+The default directadmin username is admin
+Directadmin defaults to installing CSF firewall - failed logins may be temp blocked in /etc/csf/csf.deny
+--
+Last failed login: Wed Sep  9 02:46:55 EDT 2026 from 120.48.175.69 on ssh:notty
+There were 4 failed login attempts since the last successful login.
+Last login: Wed Sep  9 02:05:26 2026 from 102.203.101.227
+[root@mail ~]# CREATE DATABASE IF NOT EXISTS chatmodz
+  CHARACTER SET utf8mb4
+  COLLATE utf8mb4_unicode_ci;
+
+CREATE USER IF NOT EXISTS 'chatmodz_app'@'127.0.0.1'
+  IDENTIFIED BY 'dj@Topaz2016';
+
+GRANT ALL PRIVILEGES ON chatmodz.*
+  TO 'chatmodz_app'@'127.0.0.1';
+
+FLUSH PRIVILEGES;
+EXIT;
+-bash: CREATE: command not found
+-bash: CHARACTER: command not found
+-bash: COLLATE: command not found
+-bash: CREATE: command not found
+-bash: IDENTIFIED: command not found
+-bash: GRANT: command not found
+-bash: TO: command not found
+-bash: FLUSH: command not found
+-bash: EXIT: command not found
+[root@mail ~]# mysql -u root -p
+Enter password:
+ERROR 1045 (28000): Access denied for user 'root'@'localhost' (using password: YES)
+[root@mail ~]# CREATE DATABASE IF NOT EXISTS chatmodz
+  CHARACTER SET utf8mb4
+  COLLATE utf8mb4_unicode_ci;
+
+CREATE USER IF NOT EXISTS 'chatmodz_app'@'127.0.0.1'
+  IDENTIFIED BY 'NEW_UNEXPOSED_DB_PASSWORD';
+
+ALTER USER 'chatmodz_app'@'127.0.0.1'
+  IDENTIFIED BY 'dj@Topaz2016';
+
+GRANT ALL PRIVILEGES ON chatmodz.*
+  TO 'chatmodz_app'@'127.0.0.1';
+
+FLUSH PRIVILEGES;
+
+SHOW DATABASES LIKE 'chatmodz';
+
+EXIT;
+-bash: CREATE: command not found
+-bash: CHARACTER: command not found
+-bash: COLLATE: command not found
+-bash: CREATE: command not found
+-bash: IDENTIFIED: command not found
+-bash: ALTER: command not found
+-bash: IDENTIFIED: command not found
+-bash: GRANT: command not found
+-bash: TO: command not found
+-bash: FLUSH: command not found
+-bash: SHOW: command not found
+-bash: EXIT: command not found
+[root@mail ~]# mysql \
+  -h localhost \
+  -u admin_chatmodz \
+  -p \
+  admin_chatmodz \
+  -e "SELECT DATABASE(), CURRENT_USER();"
+Enter password:
++----------------+--------------------------+
+| DATABASE()     | CURRENT_USER()           |
++----------------+--------------------------+
+| admin_chatmodz | admin_chatmodz@localhost |
++----------------+--------------------------+
+[root@mail ~]# mysql \
+  -h localhost \
+  -u admin_chatmodz \
+  -p \
+  admin_chatmodz \
+  < /home/admin/apps/chatmodz/artifacts/chatmodz/database/schema.mysql.sql
+Enter password:
+[root@mail ~]# mysql \
+  -h localhost \
+  -u admin_chatmodz \
+  -p \
+  -Nse "SHOW TABLES;" \
+  admin_chatmodz
+Enter password:
+audit_log
+conversation_assignments
+conversations
+integration_deliveries
+messages
+operator_activation_codes
+operator_activity
+operator_applications
+operator_earnings
+operator_level_assignments
+operator_levels
+operator_push_subscriptions
+operators
+sites
+
+
+[root@mail ~]# chmod 600 /home/admin/apps/chatmodz/.env.production
+chown admin:admin /home/admin/apps/chatmodz/.env.production
+[root@mail ~]# ENV_FILE="/home/admin/apps/chatmodz/.env.production"
+
+for key in \
+  NODE_ENV \
+  PORT \
+  CHATMODZ_DATABASE_URL \
+  CHATMODZ_JWT_SECRET \
+  CHATMODZ_ADMIN_EMAIL \
+  CHATMODZ_ADMIN_PASSWORD
+do
+  if grep -q "^${key}=" "$ENV_FILE"; then
+    echo "$key is present"
+  else
+    echo "MISSING: $key"
+  fi
+done
+
+if grep -qE 'REPLACE_WITH|YOUR_|NEW_UNEXPOSED|CHATMODZ_DB_PASSWORD' "$ENV_FILE"; then
+  echo "WARNING: placeholders still exist in .env.production"
+else
+  echo "No obvious placeholders found."
+fi
+NODE_ENV is present
+PORT is present
+CHATMODZ_DATABASE_URL is present
+CHATMODZ_JWT_SECRET is present
+CHATMODZ_ADMIN_EMAIL is present
+CHATMODZ_ADMIN_PASSWORD is present
+WARNING: placeholders still exist in .env.production
+[root@mail ~]# openssl rand -hex 32
+
+
+[root@mail ~]# openssl rand -hex 32
+929628980a79380f252d19e9be0cad7f5d90cab2eed2fb09a3f7ab2022cf42aa
+[root@mail ~]# NODE_ENV=production
+PORT=8787
+
+CHATMODZ_DATABASE_URL="mysql://admin_chatmodz:URL_ENCODED_DATABASE_PASSWORD@localhost:3306/admin_chatmodz"
+
+CHATMODZ_JWT_SECRET="929628980a79380f252d19e9be0cad7f5d90cab2eed2fb09a3f7ab2022cf42aa"
+
+CHATMODZ_ADMIN_NAME="Chatmodz Administrator"
+CHATMODZ_ADMIN_EMAIL="YOUR_REAL_ADMIN_EMAIL"
+CHATMODZ_ADMIN_PASSWORD="YOUR_NEW_ADMIN_PASSWORD"NODE_ENV=production
+PORT=8787
+
+CHATMODZ_DATABASE_URL="mysql://admin_chatmodz:URL_ENCODED_DATABASE_PASSWORD@localhost:3306/admin_chatmodz"
+
+CHATMODZ_JWT_SECRET="929628980a79380f252d19e9be0cad7f5d90cab2eed2fb09a3f7ab2022cf42aa"
+
+CHATMODZ_ADMIN_NAME="admin"
+CHATMODZ_ADMIN_EMAIL="patrickndungu.pnn@gmail.com"
+CHATMODZ_ADMIN_PASSWORD="dj@Topaz2016"
+[root@mail ~]# NODE_ENV=production
+PORT=8787
+
+CHATMODZ_DATABASE_URL="mysql://admin_chatmodz:URL_ENCODED_DATABASE_PASSWORD@localhost:3306/admin_chatmodz"
+
+CHATMODZ_JWT_SECRET="929628980a79380f252d19e9be0cad7f5d90cab2eed2fb09a3f7ab2022cf42aa"
+
+CHATMODZ_ADMIN_NAME="admin"
+CHATMODZ_ADMIN_EMAIL="patrickndungu.pnn@gmail.com"
+CHATMODZ_ADMIN_PASSWORD="dj@Topaz2016"
+[root@mail ~]# nano /home/admin/apps/chatmodz/.env.production
+[root@mail ~]# cd /home/admin/apps/chatmodz
+git pull origin main
+fatal: detected dubious ownership in repository at '/home/admin/apps/chatmodz'
+To add an exception for this directory, call:
+
+        git config --global --add safe.directory /home/admin/apps/chatmodz
+[root@mail chatmodz]# runuser -u admin -- bash -lc '
+cd /home/admin/apps/chatmodz
+git status
+git pull origin main
+git rev-parse --short HEAD
+'
+On branch main
+Your branch is up to date with 'origin/main'.
+
+nothing to commit, working tree clean
+remote: Enumerating objects: 46, done.
+remote: Counting objects: 100% (46/46), done.
+remote: Compressing objects: 100% (16/16), done.
+remote: Total 34 (delta 18), reused 34 (delta 18), pack-reused 0 (from 0)
+Unpacking objects: 100% (34/34), 1.87 MiB | 3.92 MiB/s, done.
+From https://github.com/topazdigital/chatmodz
+ * branch            main       -> FETCH_HEAD
+   b86a943..77dbfa9  main       -> origin/main
+Updating b86a943..77dbfa9
+Fast-forward
+ .replit                                                                     |   8 ++--
+ artifacts/chatmodz-api/src/chatmodz.ts                                      |  87 ++++++++++++++++++++++++++++++++++++
+ artifacts/chatmodz/src/App.tsx                                              |  75 +++++++++++++++++++++++++++----
+ artifacts/chatmodz/src/index.css                                            |  20 +++++++++
+ ...he-database-is-working-but-the-environment-file-still-_1788938864049.txt |  78 ++++++++++++++++++++++++++++++++
+ attached_assets/image_1788938922337.png                                     | Bin 0 -> 204196 bytes
+ attached_assets/image_1788940957756.png                                     | Bin 0 -> 212741 bytes
+ attached_assets/image_1788940979474.png                                     | Bin 0 -> 308020 bytes
+ attached_assets/image_1788941012648.png                                     | Bin 0 -> 380776 bytes
+ attached_assets/image_1788941256779.png                                     | Bin 0 -> 603519 bytes
+ attached_assets/image_1788941873845.png                                     | Bin 0 -> 347700 bytes
+ replit.md                                                                   |   8 ++++
+ 12 files changed, 263 insertions(+), 13 deletions(-)
+ create mode 100644 attached_assets/Pasted-The-database-is-working-but-the-environment-file-still-_1788938864049.txt
+ create mode 100644 attached_assets/image_1788938922337.png
+ create mode 100644 attached_assets/image_1788940957756.png
+ create mode 100644 attached_assets/image_1788940979474.png
+ create mode 100644 attached_assets/image_1788941012648.png
+ create mode 100644 attached_assets/image_1788941256779.png
+ create mode 100644 attached_assets/image_1788941873845.png
+77dbfa9
+[root@mail chatmodz]# pm2 restart chatmodz
+Use --update-env to update environment variables
+[PM2][ERROR] Process or Namespace chatmodz not found
+[root@mail chatmodz]# echo "=== PM2 processes ==="
+runuser -u admin -- pm2 list 2>/dev/null || true
+
+echo "=== Systemd services ==="
+systemctl list-units --type=service --all | grep -Ei 'chatmodz|node|npm|pnpm' || true
+
+echo "=== Running app processes ==="
+ps -eo user,pid,cmd | grep -Ei '[n]ode|[n]pm|[p]npm|[c]hatmodz' || true
+
+echo "=== Docker containers ==="
+docker compose ps 2>/dev/null || true
+docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}' 2>/dev/null || true
+
+echo "=== Listening ports ==="
+ss -ltnp | grep -E ':80|:443|:3000|:5000|:8080|:5173' || true
+=== PM2 processes ===
+┌────┬─────────────────┬──────────┬──────┬───────────┬──────────┬──────────┐
+│ id │ name            │ mode     │ ↺    │ status    │ cpu      │ memory   │
+├────┼─────────────────┼──────────┼──────┼───────────┼──────────┼──────────┤
+│ 1  │ betcheza        │ fork     │ 0    │ online    │ 0%       │ 23.3mb   │
+│ 0  │ dossy           │ fork     │ 0    │ online    │ 0%       │ 32.7mb   │
+│ 6  │ wet3camp-api    │ fork     │ 8853 │ online    │ 0%       │ 91.5mb   │
+└────┴─────────────────┴──────────┴──────┴───────────┴──────────┴──────────┘
+host metrics | cpu: 88.6% | ram usage: 85.8% | lo: ⇓ 0.033mb/s ⇑ 0.033mb/s | eth0: ⇓ 0.271mb/s ⇑ 0.073mb/s |
+=== Systemd services ===
+  kmod-static-nodes.service                                                                 loaded    active   exited  Create List of Static Device Nodes
+  systemd-tmpfiles-setup-dev.service                                                        loaded    active   exited  Create Static Device Nodes in /dev
+=== Running app processes ===
+admin    3611624 npm run start
+admin    3611630 npm start
+admin    3996078 node /home/admin/api-server/dist/index.mjs
+root     3996123 npm start -p 3005
+root     3996129 node /home/admin/domains/naughtyhaughty.com/public_html/ar
+root     3996135 /usr/bin/node --enable-source-maps /root/crashbet/artifacts/api-server/dist/index.mjs
+root     3996141 node /home/admin/domains/richdatingnetwork.com/public_html
+root     4109002 node /home/admin/wet3camp-build/artifacts/api-server/dist/index.mjs
+root     4109016 grep --color=auto -Ei [n]ode|[n]pm|[p]npm|[c]hatmodz
+=== Docker containers ===
+=== Listening ports ===
+LISTEN 0      511                                 0.0.0.0:5000       0.0.0.0:*    users:(("next-server (v1",pid=3611716,fd=18))
+LISTEN 0      511                                 0.0.0.0:3000       0.0.0.0:*    users:(("next-server (v1",pid=3611715,fd=18))
+LISTEN 0      511                                       *:80               *:*    users:(("httpd",pid=4078067,fd=4),("httpd",pid=4077982,fd=4),("httpd",pid=4077926,fd=4))
+LISTEN 0      511                                       *:443              *:*    users:(("httpd",pid=4078067,fd=8),("httpd",pid=4077982,fd=8),("httpd",pid=4077926,fd=8))
+[root@mail chatmodz]# for pid in 3611624 3611630 3611715 3611716; do
+  echo "=== PID $pid ==="
+  printf "directory: "
+  readlink -f /proc/$pid/cwd
+  printf "command: "
+  tr '\0' ' ' < /proc/$pid/cmdline
+  echo
+  ps -o pid,ppid,user,lstart,cmd -p "$pid"
+done
+=== PID 3611624 ===
+directory: command: npm run start
+    PID    PPID USER                      STARTED CMD
+3611624 3611613 admin    Fri Aug 21 02:54:16 2026 npm run start
+=== PID 3611630 ===
+directory: /home/admin/apps/betcheza
+command: npm start
+    PID    PPID USER                      STARTED CMD
+3611630 3611613 admin    Fri Aug 21 02:54:16 2026 npm start
+=== PID 3611715 ===
+directory: command: next-server (v16.2.0)
+    PID    PPID USER                      STARTED CMD
+3611715 3611624 admin    Fri Aug 21 02:54:20 2026 next-server (v16.2.0)
+=== PID 3611716 ===
+directory: /home/admin/apps/betcheza
+command: next-server (v16.3.0)
+    PID    PPID USER                      STARTED CMD
+3611716 3611630 admin    Fri Aug 21 02:54:20 2026 next-server (v16.3.0)
+[root@mail chatmodz]# cd /home/admin/apps/chatmodz
+runuser -u admin -- npm run
+Scripts available in chatmodz-repo@1.0.0 via `npm run-script`:
+  dev
+    pnpm --filter @workspace/chatmodz run dev
+  build
+    pnpm --filter @workspace/chatmodz run build
+  typecheck
+    pnpm --filter @workspace/chatmodz run typecheck
+[root@mail chatmodz]# cd /home/admin/apps/chatmodz
+
+runuser -u admin -- bash -lc '
+cd /home/admin/apps/chatmodz
+pnpm install --frozen-lockfile
+pnpm --filter @workspace/chatmodz run build
+pnpm --filter @workspace/chatmodz-api run build
+'
+Scope: all 3 workspace projects
+Lockfile is up to date, resolution step is skipped
+Already up to date
+╭ Warning ───────────────────────────────────────────────────────────────────────────────────╮
+│                                                                                            │
+│   Ignored build scripts: bcrypt@6.0.0, esbuild@0.27.7.                                     │
+│   Run "pnpm approve-builds" to pick which dependencies should be allowed to run scripts.   │
+│                                                                                            │
+╰────────────────────────────────────────────────────────────────────────────────────────────╯
+Done in 5.2s using pnpm v10.34.5
+
+> @workspace/chatmodz@0.0.0 build /home/admin/apps/chatmodz/artifacts/chatmodz
+> vite build --config vite.config.ts
+
+failed to load config from /home/admin/apps/chatmodz/artifacts/chatmodz/vite.config.ts
+error during build:
+Error: PORT environment variable is required but was not provided.
+    at file:///home/admin/apps/chatmodz/artifacts/chatmodz/node_modules/.vite-temp/vite.config.ts.timestamp-1788942610138-8217caee308e9.mjs:10:9
+    at ModuleJob.run (node:internal/modules/esm/module_job:325:25)
+    at async ModuleLoader.import (node:internal/modules/esm/loader:606:24)
+    at async loadConfigFromBundledFile (file:///home/admin/apps/chatmodz/node_modules/.pnpm/vite@7.3.6_@types+node@25.9.5_jiti@2.7.0_lightningcss@1.32.0/node_modules/vite/dist/node/chunks/config.js:35996:12)
+    at async bundleAndLoadConfigFile (file:///home/admin/apps/chatmodz/node_modules/.pnpm/vite@7.3.6_@types+node@25.9.5_jiti@2.7.0_lightningcss@1.32.0/node_modules/vite/dist/node/chunks/config.js:35884:17)
+    at async loadConfigFromFile (file:///home/admin/apps/chatmodz/node_modules/.pnpm/vite@7.3.6_@types+node@25.9.5_jiti@2.7.0_lightningcss@1.32.0/node_modules/vite/dist/node/chunks/config.js:35851:42)
+    at async resolveConfig (file:///home/admin/apps/chatmodz/node_modules/.pnpm/vite@7.3.6_@types+node@25.9.5_jiti@2.7.0_lightningcss@1.32.0/node_modules/vite/dist/node/chunks/config.js:35500:22)
+    at async createBuilder (file:///home/admin/apps/chatmodz/node_modules/.pnpm/vite@7.3.6_@types+node@25.9.5_jiti@2.7.0_lightningcss@1.32.0/node_modules/vite/dist/node/chunks/config.js:33955:19)
+    at async CAC.<anonymous> (file:///home/admin/apps/chatmodz/node_modules/.pnpm/vite@7.3.6_@types+node@25.9.5_jiti@2.7.0_lightningcss@1.32.0/node_modules/vite/dist/node/cli.js:629:10)
+/home/admin/apps/chatmodz/artifacts/chatmodz:
+ ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL  @workspace/chatmodz@0.0.0 build: `vite build --config vite.config.ts`
+Exit status 1
+
+> @workspace/chatmodz-api@1.0.0 build /home/admin/apps/chatmodz/artifacts/chatmodz-api
+> node build.mjs
+
+[root@mail chatmodz]# ls -lah /home/admin/apps/chatmodz/artifacts/chatmodz/dist/public
+ls -lah /home/admin/apps/chatmodz/artifacts/chatmodz-api/dist
+total 32K
+drwxr-xr-x 3 admin admin 4.0K Sep  9 02:31 .
+drwxr-xr-x 3 admin admin 4.0K Sep  9 02:31 ..
+drwxr-xr-x 2 admin admin 4.0K Sep  9 02:31 assets
+-rw-r--r-- 1 admin admin  163 Sep  9 02:31 favicon.svg
+-rw-r--r-- 1 admin admin 3.1K Sep  9 02:31 index.html
+-rw-r--r-- 1 admin admin   45 Sep  9 02:31 robots.txt
+-rw-r--r-- 1 admin admin  182 Sep  9 02:31 sitemap.xml
+-rw-r--r-- 1 admin admin 1.9K Sep  9 02:31 sw.js
+total 164K
+drwxr-xr-x 2 admin admin 4.0K Sep  9 02:31 .
+drwxr-xr-x 6 admin admin 4.0K Sep  9 02:31 ..
+-rw-r--r-- 1 admin admin  58K Sep  9 04:30 index.mjs
+-rw-r--r-- 1 admin admin  96K Sep  9 04:30 index.mjs.map
+[root@mail chatmodz]# cd /home/admin/apps/chatmodz
+
+runuser -u admin -- bash -lc '
+cd /home/admin/apps/chatmodz
+PORT=5001 BASE_PATH=/ pnpm --filter @workspace/chatmodz run build
+'
+
+> @workspace/chatmodz@0.0.0 build /home/admin/apps/chatmodz/artifacts/chatmodz
+> vite build --config vite.config.ts
+
+vite v7.3.6 building client environment for production...
+✓ 1766 modules transformed.
+dist/public/index.html                   3.13 kB │ gzip:   1.23 kB
+dist/public/assets/index-CbILPz3u.css  122.11 kB │ gzip:  21.49 kB
+dist/public/assets/index-Baut9v3L.js   384.64 kB │ gzip: 119.92 kB
+✓ built in 14.18s
+[root@mail chatmodz]# stat /home/admin/apps/chatmodz/artifacts/chatmodz/dist/public/index.html
+ls -lah /home/admin/apps/chatmodz/artifacts/chatmodz/dist/public
+  File: /home/admin/apps/chatmodz/artifacts/chatmodz/dist/public/index.html
+  Size: 3126            Blocks: 8          IO Block: 4096   regular file
+Device: 804h/2052d      Inode: 1713355     Links: 1
+Access: (0644/-rw-r--r--)  Uid: ( 1000/   admin)   Gid: ( 1000/   admin)
+Access: 2026-09-09 04:33:17.339014949 -0400
+Modify: 2026-09-09 04:33:17.339014949 -0400
+Change: 2026-09-09 04:33:17.339014949 -0400
+ Birth: 2026-09-09 04:33:17.339014949 -0400
+total 32K
+drwxr-xr-x 3 admin admin 4.0K Sep  9 04:33 .
+drwxr-xr-x 3 admin admin 4.0K Sep  9 02:31 ..
+drwxr-xr-x 2 admin admin 4.0K Sep  9 04:33 assets
+-rw-r--r-- 1 admin admin  163 Sep  9 04:33 favicon.svg
+-rw-r--r-- 1 admin admin 3.1K Sep  9 04:33 index.html
+-rw-r--r-- 1 admin admin   45 Sep  9 04:33 robots.txt
+-rw-r--r-- 1 admin admin  182 Sep  9 04:33 sitemap.xml
+-rw-r--r-- 1 admin admin 1.9K Sep  9 04:33 sw.js
+[root@mail chatmodz]# cd /home/admin/apps/chatmodz
+git pull origin main
+pnpm install --frozen-lockfile
+pnpm --filter @workspace/chatmodz run build
+pnpm --filter @workspace/chatmodz-api run build
+fatal: detected dubious ownership in repository at '/home/admin/apps/chatmodz'
+To add an exception for this directory, call:
+
+        git config --global --add safe.directory /home/admin/apps/chatmodz
+Scope: all 3 workspace projects
+? The modules directories will be removed and reinstalled from scratch. Proceed? (Y/n) ‣ true
+   ╭─────────────────────────────────────────╮
+   │                                         │
+   │   Update available! 10.34.5 → 12.3.4.   │
+   │   Changelog: https://pnpm.io/v/12.3.4   │
+   │    To update, run: pnpm add -g pnpm     │
+   │                                         │
+   ╰─────────────────────────────────────────╯
+
+✔ The modules directories will be removed and reinstalled from scratch. Proceed? (Y/n) · true
+Recreating /home/admin/apps/chatmodz/node_modules
+
+Lockfile is up to date, resolution step is skipped
+Packages: +342
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+Progress: resolved 342, reused 224, downloaded 118, added 342, done
+╭ Warning ───────────────────────────────────────────────────────────────────────────────────╮
+│                                                                                            │
+│   Ignored build scripts: bcrypt@6.0.0, esbuild@0.27.7.                                     │
+│   Run "pnpm approve-builds" to pick which dependencies should be allowed to run scripts.   │
+│                                                                                            │
+╰────────────────────────────────────────────────────────────────────────────────────────────╯
+Done in 2m 40.5s using pnpm v10.34.5
+
+> @workspace/chatmodz@0.0.0 build /home/admin/apps/chatmodz/artifacts/chatmodz
+> vite build --config vite.config.ts
+
+failed to load config from /home/admin/apps/chatmodz/artifacts/chatmodz/vite.config.ts
+error during build:
+Error: PORT environment variable is required but was not provided.
+    at file:///home/admin/apps/chatmodz/artifacts/chatmodz/node_modules/.vite-temp/vite.config.ts.timestamp-1788943914329-18b47baca2c79.mjs:10:9
+    at ModuleJob.run (node:internal/modules/esm/module_job:325:25)
+    at async ModuleLoader.import (node:internal/modules/esm/loader:606:24)
+    at async loadConfigFromBundledFile (file:///home/admin/apps/chatmodz/node_modules/.pnpm/vite@7.3.6_@types+node@25.9.5_jiti@2.7.0_lightningcss@1.32.0/node_modules/vite/dist/node/chunks/config.js:35996:12)
+    at async bundleAndLoadConfigFile (file:///home/admin/apps/chatmodz/node_modules/.pnpm/vite@7.3.6_@types+node@25.9.5_jiti@2.7.0_lightningcss@1.32.0/node_modules/vite/dist/node/chunks/config.js:35884:17)
+    at async loadConfigFromFile (file:///home/admin/apps/chatmodz/node_modules/.pnpm/vite@7.3.6_@types+node@25.9.5_jiti@2.7.0_lightningcss@1.32.0/node_modules/vite/dist/node/chunks/config.js:35851:42)
+    at async resolveConfig (file:///home/admin/apps/chatmodz/node_modules/.pnpm/vite@7.3.6_@types+node@25.9.5_jiti@2.7.0_lightningcss@1.32.0/node_modules/vite/dist/node/chunks/config.js:35500:22)
+    at async createBuilder (file:///home/admin/apps/chatmodz/node_modules/.pnpm/vite@7.3.6_@types+node@25.9.5_jiti@2.7.0_lightningcss@1.32.0/node_modules/vite/dist/node/chunks/config.js:33955:19)
+    at async CAC.<anonymous> (file:///home/admin/apps/chatmodz/node_modules/.pnpm/vite@7.3.6_@types+node@25.9.5_jiti@2.7.0_lightningcss@1.32.0/node_modules/vite/dist/node/cli.js:629:10)
+/home/admin/apps/chatmodz/artifacts/chatmodz:
+ ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL  @workspace/chatmodz@0.0.0 build: `vite build --config vite.config.ts`
+Exit status 1
+
+> @workspace/chatmodz-api@1.0.0 build /home/admin/apps/chatmodz/artifacts/chatmodz-api
+> node build.mjs
+
+[root@mail chatmodz]#
+[root@mail chatmodz]# sudo -u admin -H bash -lc '
+cd /home/admin/apps/chatmodz &&
+git pull --ff-only origin main &&
+pnpm --filter @workspace/chatmodz run build &&
+pnpm --filter @workspace/chatmodz-api run build
+'
+remote: Enumerating objects: 23, done.
+remote: Counting objects: 100% (23/23), done.
+remote: Compressing objects: 100% (9/9), done.
+remote: Total 16 (delta 6), reused 16 (delta 6), pack-reused 0 (from 0)
+Unpacking objects: 100% (16/16), 1.47 MiB | 5.78 MiB/s, done.
+From https://github.com/topazdigital/chatmodz
+ * branch            main       -> FETCH_HEAD
+   77dbfa9..819a577  main       -> origin/main
+Updating 77dbfa9..819a577
+Fast-forward
+ artifacts/chatmodz/public/.htaccess     |  13 +++++++++++++
+ artifacts/chatmodz/vite.config.ts       |  19 +++++--------------
+ attached_assets/image_1788943333070.png | Bin 0 -> 214699 bytes
+ attached_assets/image_1788943352809.png | Bin 0 -> 320829 bytes
+ attached_assets/image_1788943366795.png | Bin 0 -> 250595 bytes
+ attached_assets/image_1788943413925.png | Bin 0 -> 269831 bytes
+ attached_assets/image_1788943440055.png | Bin 0 -> 547714 bytes
+ replit.md                               |  46 ++++++++++++++++++++++++++++++++++++++++++++++
+ screenshots/chatmodz-preview.jpg        | Bin 0 -> 58837 bytes
+ 9 files changed, 64 insertions(+), 14 deletions(-)
+ create mode 100644 artifacts/chatmodz/public/.htaccess
+ create mode 100644 attached_assets/image_1788943333070.png
+ create mode 100644 attached_assets/image_1788943352809.png
+ create mode 100644 attached_assets/image_1788943366795.png
+ create mode 100644 attached_assets/image_1788943413925.png
+ create mode 100644 attached_assets/image_1788943440055.png
+ create mode 100644 screenshots/chatmodz-preview.jpg
+
+> @workspace/chatmodz@0.0.0 build /home/admin/apps/chatmodz/artifacts/chatmodz
+> vite build --config vite.config.ts
+
+vite v7.3.6 building client environment for production...
+✓ 1766 modules transformed.
+dist/public/index.html                   3.13 kB │ gzip:   1.23 kB
+dist/public/assets/index-CbILPz3u.css  122.11 kB │ gzip:  21.49 kB
+dist/public/assets/index-Baut9v3L.js   384.64 kB │ gzip: 119.92 kB
+✓ built in 12.05s
+
+> @workspace/chatmodz-api@1.0.0 build /home/admin/apps/chatmodz/artifacts/chatmodz-api
+> node build.mjs
+
+[root@mail chatmodz]# cp -a \
+  /home/admin/apps/chatmodz/artifacts/chatmodz/dist/public/. \
+  /home/admin/domains/chatmodz.com/public_html/
+cp: overwrite '/home/admin/domains/chatmodz.com/public_html/./.htaccess'?
+[root@mail chatmodz]# ls -lah /home/admin/domains/chatmodz.com/public_html/
+total 36K
+drwxr-xr-x 3 admin admin 4.0K Sep  9 04:53 .
+drwx--x--x 4 admin admin 4.0K Sep  9 02:03 ..
+drwxr-xr-x 2 admin admin 4.0K Sep  9 04:53 assets
+-rw-r--r-- 1 admin admin  163 Sep  9 04:53 favicon.svg
+-rw-r--r-- 1 admin admin  388 Sep  9 02:34 .htaccess
+-rw-r--r-- 1 admin admin 3.1K Sep  9 04:53 index.html
+-rw-r--r-- 1 admin admin   45 Sep  9 04:53 robots.txt
+-rw-r--r-- 1 admin admin  182 Sep  9 04:53 sitemap.xml
+-rw-r--r-- 1 admin admin 1.9K Sep  9 04:53 sw.js
+[root@mail chatmodz]# ENV_FILE=/home/admin/apps/chatmodz/.env.production
+
+if grep -qE 'REPLACE_WITH|YOUR_|NEW_UNEXPOSED|CHATMODZ_DB_PASSWORD|PASTE_' "$ENV_FILE"; then
+  echo "Placeholders still remain"
+else
+  echo "No obvious placeholders found"
+fi
+Placeholders still remain
+[root@mail chatmodz]# openssl rand -hex 32
+671fa611201c8ae2ac78e860f03c9af41b9df16b1cddcdb6b52eacff1b1066a4
+[root@mail chatmodz]# chown admin:admin /home/admin/apps/chatmodz/.env.production
+chmod 600 /home/admin/apps/chatmodz/.env.production
+[root@mail chatmodz]# ENV_FILE=/home/admin/apps/chatmodz/.env.production
+
+grep -E '^(NODE_ENV|PORT|CHATMODZ_DATABASE_URL|CHATMODZ_JWT_SECRET|CHATMODZ_ADMIN_NAME|CHATMODZ_ADMIN_EMAIL|CHATMODZ_ADMIN_PASSWORD)=' "$ENV_FILE" \
+  | sed -E 's/=.*/=<configured>/'
+NODE_ENV=<configured>
+PORT=<configured>
+CHATMODZ_DATABASE_URL=<configured>
+CHATMODZ_JWT_SECRET=<configured>
+CHATMODZ_ADMIN_NAME=<configured>
+CHATMODZ_ADMIN_EMAIL=<configured>
+CHATMODZ_ADMIN_PASSWORD=<configured>
+[root@mail chatmodz]# if grep -qE 'REPLACE_WITH|YOUR_|NEW_UNEXPOSED|CHATMODZ_DB_PASSWORD|PASTE_|URL_ENCODED|CHOOSE_' "$ENV_FILE"; then
+  echo "Placeholders still remain"
+else
+  echo "No obvious placeholders found"
+fi
+No obvious placeholders found
+[root@mail chatmodz]# ss -ltnp | grep ':8787 ' || echo "Port 8787 is available"
+Port 8787 is available
+[root@mail chatmodz]# sudo -u admin -H bash -lc '
+cd /home/admin/apps/chatmodz
+set -a
+. ./.env.production
+set +a
+exec pnpm --filter @workspace/chatmodz-api run start
+'
+
+> @workspace/chatmodz-api@1.0.0 start /home/admin/apps/chatmodz/artifacts/chatmodz-api
+> node dist/index.mjs
+
+Chatmodz bootstrap administrator created
+Chatmodz API listening on 8787
+^Z
+[1]+  Stopped                 sudo -u admin -H bash -lc '
+cd /home/admin/apps/chatmodz
+set -a
+. ./.env.production
+set +a
+exec pnpm --filter @workspace/chatmodz-api run start
+'
+[root@mail chatmodz]# curl http://127.0.0.1:8787/healthz
+^Z
+[2]+  Stopped                 curl http://127.0.0.1:8787/healthz
+[root@mail chatmodz]# dig +short chatmodz.com
+157.250.205.180
+[root@mail chatmodz]# curl -I https://chatmodz.com/
+curl -i https://chatmodz.com/healthz
+HTTP/2 200
+last-modified: Wed, 09 Sep 2026 08:53:34 GMT
+etag: "c36-65b08fc87c28e"
+accept-ranges: bytes
+content-length: 3126
+vary: Accept-Encoding,User-Agent
+content-type: text/html
+date: Wed, 09 Sep 2026 09:13:41 GMT
+server: Apache/2
+
+^Z
+[3]+  Stopped                 curl -i https://chatmodz.com/healthz
+[root@mail chatmodz]# jobs -l
+ss -ltnp | grep ':8787 ' || echo "API is not listening"
+curl --max-time 5 -i http://127.0.0.1:8787/healthz
+[1]  4139380 Stopped                 sudo -u admin -H bash -lc '
+cd /home/admin/apps/chatmodz
+set -a
+. ./.env.production
+set +a
+exec pnpm --filter @workspace/chatmodz-api run start
+'
+[2]- 4143717 Stopped                 curl http://127.0.0.1:8787/healthz
+[3]+ 4146485 Stopped                 curl -i https://chatmodz.com/healthz
+LISTEN 6      511                                       *:8787             *:*    users:(("node",pid=4139441,fd=21))                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    
+curl: (28) Operation timed out after 5000 milliseconds with 0 bytes received
+[root@mail chatmodz]# bg %1
+sleep 1
+curl --max-time 5 -i http://127.0.0.1:8787/healthz
+[1] sudo -u admin -H bash -lc '
+cd /home/admin/apps/chatmodz
+set -a
+. ./.env.production
+set +a
+exec pnpm --filter @workspace/chatmodz-api run start
+' &
+HTTP/1.1 200 OK
+X-Powered-By: Express
+Access-Control-Allow-Origin: *
+Content-Type: application/json; charset=utf-8
+Content-Length: 36
+ETag: W/"24-cR8Q78g6YM8ek/eDPz6fwtwbbKs"
+Date: Wed, 09 Sep 2026 09:18:17 GMT
+Connection: keep-alive
+Keep-Alive: timeout=5
+
+{"ok":true,"service":"chatmodz-api"}[root@mail chatmodz]# curl --max-time 10 -i https://chatmodz.com/api/chatmodz/auth/me                     curl --max-time 10 -i https://chatmodz.com/api/chatmodz/auth/me
+HTTP/2 401
+x-powered-by: Express
+access-control-allow-origin: *
+content-type: application/json; charset=utf-8
+content-length: 24
+etag: W/"18-XPDV80vbMk4yY1/PADG4jYM4rSI"
+date: Wed, 09 Sep 2026 09:18:48 GMT
+vary: User-Agent
+server: Apache/2
+
+{"error":"Unauthorized"}[root@mail chatmodz]#
+[root@mail chatmodz]# curl --max-time 10 -i https://chatmodz.com/api/chatmodz/auth/me
+HTTP/2 401
+x-powered-by: Express
+access-control-allow-origin: *
+content-type: application/json; charset=utf-8
+content-length: 24
+etag: W/"18-XPDV80vbMk4yY1/PADG4jYM4rSI"
+date: Wed, 09 Sep 2026 09:19:01 GMT
+vary: User-Agent
+server: Apache/2
+
+{"error":"Unauthorized"}[root@mail chatmodz]#
+[root@mail chatmodz]# openssl rand -hex 32
+fac232bbfb0770941dabfa1b84d625ce6ba0a2bd891fcd8d920fb3ca09d13185
+[root@mail chatmodz]# sudo -u admin -H bash -lc '
+cd /home/admin/apps/chatmodz &&
+git pull --ff-only origin main &&
+pnpm --filter @workspace/chatmodz run build &&
+pnpm --filter @workspace/chatmodz-api run build
+'
+remote: Enumerating objects: 56, done.
+remote: Counting objects: 100% (56/56), done.
+remote: Compressing objects: 100% (23/23), done.
+remote: Total 47 (delta 24), reused 47 (delta 24), pack-reused 0 (from 0)
+Unpacking objects: 100% (47/47), 2.89 MiB | 5.83 MiB/s, done.
+From https://github.com/topazdigital/chatmodz
+ * branch            main       -> FETCH_HEAD
+   819a577..10cbc57  main       -> origin/main
+Updating 819a577..10cbc57
+Fast-forward
+ artifacts/chatmodz-api/src/chatmodz.ts                                      |   2 +
+ artifacts/chatmodz/src/App.tsx                                              | 101 +++++++++++++++++++++++++++++++++++-
+ ...root-mail-chatmodz-stat-home-admin-apps-chatmodz-artif_1788943946760.txt |  77 +++++++++++++++++++++++++++
+ ...root-mail-chatmodz-sudo-u-admin-H-bash-lc-cd-home-admi_1788944041322.txt |  48 +++++++++++++++++
+ attached_assets/image_1788943809036.png                                     | Bin 0 -> 462281 bytes
+ attached_assets/image_1788943878269.png                                     | Bin 0 -> 252849 bytes
+ attached_assets/image_1788944144949.png                                     | Bin 0 -> 315000 bytes
+ attached_assets/image_1788944179720.png                                     | Bin 0 -> 626862 bytes
+ attached_assets/image_1788944503097.png                                     | Bin 0 -> 206320 bytes
+ attached_assets/image_1788945048552.png                                     | Bin 0 -> 209382 bytes
+ attached_assets/image_1788945062048.png                                     | Bin 0 -> 268080 bytes
+ attached_assets/image_1788945389418.png                                     | Bin 0 -> 572806 bytes
+ attached_assets/image_1788945588368.png                                     | Bin 0 -> 275952 bytes
+ 13 files changed, 227 insertions(+), 1 deletion(-)
+ create mode 100644 attached_assets/Pasted--root-mail-chatmodz-stat-home-admin-apps-chatmodz-artif_1788943946760.txt
+ create mode 100644 attached_assets/Pasted--root-mail-chatmodz-sudo-u-admin-H-bash-lc-cd-home-admi_1788944041322.txt
+ create mode 100644 attached_assets/image_1788943809036.png
+ create mode 100644 attached_assets/image_1788943878269.png
+ create mode 100644 attached_assets/image_1788944144949.png
+ create mode 100644 attached_assets/image_1788944179720.png
+ create mode 100644 attached_assets/image_1788944503097.png
+ create mode 100644 attached_assets/image_1788945048552.png
+ create mode 100644 attached_assets/image_1788945062048.png
+ create mode 100644 attached_assets/image_1788945389418.png
+ create mode 100644 attached_assets/image_1788945588368.png
+
+> @workspace/chatmodz@0.0.0 build /home/admin/apps/chatmodz/artifacts/chatmodz
+> vite build --config vite.config.ts
+
+vite v7.3.6 building client environment for production...
+✓ 1766 modules transformed.
+dist/public/index.html                   3.13 kB │ gzip:   1.23 kB
+dist/public/assets/index-CbILPz3u.css  122.11 kB │ gzip:  21.49 kB
+dist/public/assets/index-DMBbMsrL.js   390.73 kB │ gzip: 120.89 kB
+✓ built in 19.28s
+
+> @workspace/chatmodz-api@1.0.0 build /home/admin/apps/chatmodz/artifacts/chatmodz-api
+> node build.mjs
+
+[root@mail chatmodz]# cp -a \
+  /home/admin/apps/chatmodz/artifacts/chatmodz/dist/public/. \
+  /home/admin/domains/chatmodz.com/public_html/
+cp: overwrite '/home/admin/domains/chatmodz.com/public_html/./.htaccess'?
+cp: overwrite '/home/admin/domains/chatmodz.com/public_html/./favicon.svg'?
+cp: overwrite '/home/admin/domains/chatmodz.com/public_html/./robots.txt'?
+cp: overwrite '/home/admin/domains/chatmodz.com/public_html/./sitemap.xml'?
+cp: overwrite '/home/admin/domains/chatmodz.com/public_html/./sw.js'?
+cp: overwrite '/home/admin/domains/chatmodz.com/public_html/./assets/index-CbILPz3u.css'?
+cp: overwrite '/home/admin/domains/chatmodz.com/public_html/./index.html'?
+[root@mail chatmodz]#
+[root@mail chatmodz]# sudo -u admin -H bash -lc '
+set -e
+cd /home/admin/apps/chatmodz
+
+git pull --ff-only origin main
+
+pnpm --filter @workspace/chatmodz run build
+pnpm --filter @workspace/chatmodz-api run build
+
+cp -af artifacts/chatmodz/dist/public/. \
+  /home/admin/domains/chatmodz.com/public_html/
+'
+From https://github.com/topazdigital/chatmodz
+ * branch            main       -> FETCH_HEAD
+Already up to date.
+
+> @workspace/chatmodz@0.0.0 build /home/admin/apps/chatmodz/artifacts/chatmodz
+> vite build --config vite.config.ts
+
+vite v7.3.6 building client environment for production...
+✓ 1766 modules transformed.
+dist/public/index.html                   3.13 kB │ gzip:   1.23 kB
+dist/public/assets/index-CbILPz3u.css  122.11 kB │ gzip:  21.49 kB
+dist/public/assets/index-DMBbMsrL.js   390.73 kB │ gzip: 120.89 kB
+✓ built in 11.94s
+
+> @workspace/chatmodz-api@1.0.0 build /home/admin/apps/chatmodz/artifacts/chatmodz-api
+> node build.mjs
+
+[root@mail chatmodz]# echo "Built bundle:"
+grep -o 'assets/index-[^"]*\.js' \
+  /home/admin/apps/chatmodz/artifacts/chatmodz/dist/public/index.html | head -1
+
+echo "Live bundle:"
+grep -o 'assets/index-[^"]*\.js' \
+  /home/admin/domains/chatmodz.com/public_html/index.html | head -1
+Built bundle:
+assets/index-DMBbMsrL.js
+Live bundle:
+assets/index-DMBbMsrL.js
+[root@mail chatmodz]# curl -i http://127.0.0.1:8787/healthz
+HTTP/1.1 200 OK
+X-Powered-By: Express
+Access-Control-Allow-Origin: *
+Content-Type: application/json; charset=utf-8
+Content-Length: 36
+ETag: W/"24-cR8Q78g6YM8ek/eDPz6fwtwbbKs"
+Date: Wed, 09 Sep 2026 09:34:42 GMT
+Connection: keep-alive
+Keep-Alive: timeout=5
+
+{"ok":true,"service":"chatmodz-api"}[root@mail chatmodz]#
+[root@mail chatmodz]# curl -i https://chatmodz.com/api/chatmodz/auth/me
+HTTP/2 200
+last-modified: Wed, 09 Sep 2026 09:30:56 GMT
+etag: "c36-65b098226a692"
+accept-ranges: bytes
+content-length: 3126
+vary: Accept-Encoding,User-Agent
+content-type: text/html
+date: Wed, 09 Sep 2026 09:35:34 GMT
+server: Apache/2
+
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1" />
+    <title>Chatmodz | Remote Chat Operator Jobs &amp; Conversation Operations</title>
+    <meta name="description" content="Find remote chat operator work with Chatmodz. Join a focused conversation operations team, grow through clear operator levels, and earn per delivered message." />
+    <meta name="keywords" content="remote chat operator jobs, chat moderator jobs, conversation operator, work from home chat jobs, paid messaging jobs" />
+    <meta name="robots" content="index, follow" />
+    <meta property="og:title" content="Chatmodz | Remote Chat Operator Jobs" />
+    <meta property="og:description" content="A calm, secure workspace for remote chat operators. Apply, grow your level, and earn for every delivered reply." />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Chatmodz" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Chatmodz | Remote Chat Operator Jobs" />
+    <meta name="twitter:description" content="Join a focused remote chat operations team and grow through clear operator levels." />
+    <meta name="theme-color" content="#18263c" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "JobPosting",
+        "title": "Remote Chat Operator",
+        "description": "Join Chatmodz as a remote chat operator. Work from a focused conversation workspace, build experience through clear operator levels, and earn per delivered reply.",
+        "employmentType": "CONTRACTOR",
+        "hiringOrganization": {
+          "@type": "Organization",
+          "name": "Chatmodz"
+        },
+        "jobLocationType": "TELECOMMUTE",
+        "applicantLocationRequirements": {
+          "@type": "AdministrativeArea",
+          "name": "Worldwide"
+        }
+      }
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script type="module" crossorigin src="/assets/index-DMBbMsrL.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-CbILPz3u.css">
+  </head>
+  <body>
+    <div id="root"></div>
+    <script>
+      // Replit preview recovery: clear a stale demo session before React loads.
+      if (new URLSearchParams(window.location.search).has("reset_session")) {
+        try {
+          localStorage.removeItem("chatmodz_auth");
+        } catch {
+          // Ignore storage restrictions; the login page can still render.
+        }
+        const cleanUrl = new URL(window.location.href);
+        cleanUrl.searchParams.delete("reset_session");
+        window.history.replaceState({}, "", cleanUrl.pathname + cleanUrl.search + cleanUrl.hash);
+      }
+    </script>
+  </body>
+</html>
+[root@mail chatmodz]# apachectl configtest
+systemctl reload httpd
+Syntax OK
+[root@mail chatmodz]# curl -i https://chatmodz.com/api/chatmodz/auth/me
+HTTP/2 401
+x-powered-by: Express
+access-control-allow-origin: *
+content-type: application/json; charset=utf-8
+content-length: 24
+etag: W/"18-XPDV80vbMk4yY1/PADG4jYM4rSI"
+date: Wed, 09 Sep 2026 09:39:43 GMT
+vary: User-Agent
+server: Apache/2
+
+{"error":"Unauthorized"}[root@mail chatmodz]#
+[root@mail chatmodz]# ^C
+[root@mail chatmodz]#

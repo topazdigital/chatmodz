@@ -445,7 +445,9 @@ router.get("/conversations", requireChatmodzAuth, async (req, res) => {
         (SELECT delivery_status FROM messages m WHERE m.conversation_id = c.id ORDER BY m.sent_at DESC, m.id DESC LIMIT 1) AS last_delivery_status,
         (SELECT COUNT(*) FROM messages m WHERE m.conversation_id = c.id) AS msg_count
       FROM conversations c
-      WHERE c.status <> 'closed' AND (c.lock_expires_at IS NULL OR c.lock_expires_at < NOW() OR c.assigned_operator_id = ?)
+      WHERE c.status <> 'closed'
+        AND (c.lock_expires_at IS NULL OR c.lock_expires_at < NOW() OR c.assigned_operator_id = ?)
+        AND (SELECT sender_type FROM messages m WHERE m.conversation_id = c.id ORDER BY m.sent_at DESC, m.id DESC LIMIT 1) = 'member'
       ORDER BY CASE WHEN (SELECT sender_type FROM messages m WHERE m.conversation_id = c.id ORDER BY m.sent_at DESC, m.id DESC LIMIT 1) = 'member' THEN 0 ELSE 1 END, c.last_message_at DESC
       LIMIT 100
     `, [req.chatmodzOperator!.id])
@@ -492,6 +494,7 @@ router.get("/conversations/:key/messages", requireChatmodzAuth, async (req, res)
     res.json({
       messages: rows.map((row) => ({
         id: Number(row.id),
+        senderType: row.sender_type,
         u1: row.sender_type === "managed_profile" ? -1 : -2,
         u2: row.sender_type === "managed_profile" ? -2 : -1,
         message: row.body,
@@ -643,7 +646,7 @@ router.post("/conversations/:key/reply", requireChatmodzAuth, async (req, res) =
       await query("UPDATE operator_earnings SET status = 'void' WHERE message_id = ?", [messageId])
       return res.status(502).json({ error: "Reply could not be delivered to the connected site" })
     }
-    res.json({ message: { id: messageId, u1: -1, u2: -2, message: body, time: Math.floor(new Date(messageRows[0].sent_at).getTime() / 1000), read: 1, mediaUrl: operatorMediaPath(mediaUrl), mediaType }, deliveryStatus: "delivered" })
+    res.json({ message: { id: messageId, senderType: "managed_profile", u1: -1, u2: -2, message: body, time: Math.floor(new Date(messageRows[0].sent_at).getTime() / 1000), read: 1, mediaUrl: operatorMediaPath(mediaUrl), mediaType }, deliveryStatus: "delivered" })
   } catch (error) {
     if (failConfiguration(res, error)) return
     res.status(500).json({ error: "Reply unavailable" })
@@ -653,7 +656,12 @@ router.post("/conversations/:key/reply", requireChatmodzAuth, async (req, res) =
 router.get("/stats", requireChatmodzAuth, async (req, res) => {
   if (isDemoMode()) return res.json({ activeLocks: 0, totalConversations: 0, messagesSent: 0, demo: true })
   try {
-    const [conversation] = await query<any>("SELECT COUNT(*) AS total FROM conversations WHERE status <> 'closed'")
+    const [conversation] = await query<any>(`
+      SELECT COUNT(*) AS total
+      FROM conversations c
+      WHERE c.status <> 'closed'
+        AND (SELECT sender_type FROM messages m WHERE m.conversation_id = c.id ORDER BY m.sent_at DESC, m.id DESC LIMIT 1) = 'member'
+    `)
     const [locks] = await query<any>("SELECT COUNT(*) AS total FROM conversations WHERE assigned_operator_id IS NOT NULL AND lock_expires_at > NOW()")
     const [sent] = await query<any>("SELECT COUNT(*) AS total FROM messages WHERE sent_by_operator_id = ?", [req.chatmodzOperator!.id])
     res.json({ activeLocks: Number(locks?.total || 0), totalConversations: Number(conversation?.total || 0), messagesSent: Number(sent?.total || 0) })
@@ -693,7 +701,8 @@ router.delete("/push/unsubscribe", requireChatmodzAuth, async (req, res) => {
 router.post("/integrations/:siteKey/messages", async (req, res) => {
   const siteKey = String(req.params.siteKey || "")
   const payload = req.body || {}
-  if (!payload.eventId || !payload.conversationId || !payload.messageId || !payload.body || payload.sender !== "member") return res.status(400).json({ error: "Invalid message event" })
+  const senderType = payload.sender === "managed_profile" ? "managed_profile" : payload.sender === "member" ? "member" : ""
+  if (!payload.eventId || !payload.conversationId || !payload.messageId || !payload.body || !senderType) return res.status(400).json({ error: "Invalid message event" })
   try {
     const sites = await query<any>("SELECT * FROM sites WHERE internal_name = ? AND status = 'active' LIMIT 1", [siteKey])
     const site = sites[0]
@@ -709,10 +718,10 @@ router.post("/integrations/:siteKey/messages", async (req, res) => {
       } else {
         await connection.execute("UPDATE conversations SET member_alias = ?, managed_profile_alias = ?, member_photo_url = COALESCE(?, member_photo_url), managed_profile_photo_url = COALESCE(?, managed_profile_photo_url), last_message_at = ? WHERE id = ?", [payload.memberAlias || "Member", payload.managedProfileAlias || "Managed profile", payload.memberPhotoUrl || null, payload.managedProfilePhotoUrl || null, new Date(payload.sentAt || Date.now()), conversationId])
       }
-      await connection.execute("INSERT INTO messages (conversation_id, external_message_id, sender_type, body, delivery_status, sent_at) VALUES (?, ?, 'member', ?, 'received', ?)", [conversationId, payload.messageId, payload.body, new Date(payload.sentAt || Date.now())])
+      await connection.execute("INSERT INTO messages (conversation_id, external_message_id, sender_type, body, delivery_status, sent_at) VALUES (?, ?, ?, ?, 'received', ?)", [conversationId, payload.messageId, senderType, payload.body, new Date(payload.sentAt || Date.now())])
       await connection.execute("INSERT INTO integration_deliveries (site_id, direction, external_event_id, conversation_id, status, attempt_count, payload_json) VALUES (?, 'incoming', ?, ?, 'processed', 1, ?)", [site.id, payload.eventId, conversationId, JSON.stringify(payload)])
     })
-    await notifyPush("New conversation message", "A member message is waiting in the operator queue").catch(() => undefined)
+    if (senderType === "member") await notifyPush("New conversation message", "A member message is waiting in the operator queue").catch(() => undefined)
     res.status(202).json({ accepted: true })
   } catch (error: any) {
     if (failConfiguration(res, error)) return

@@ -36,6 +36,11 @@ on `eventId`, maps the payload to the `conversations` and `messages` tables,
 then returns `202 Accepted`. Photo and media values must already be proxied
 through Chatmodz; operator responses reject raw external URLs.
 
+The `sender` value may also be `managed_profile` when the connected site
+reports a reply sent directly from its own interface. These messages are
+stored in the same conversation history but do not appear in the operator
+queue until a newer `member` message arrives.
+
 ## Outgoing reply
 
 When an operator sends a reply, Chatmodz resolves the stored `site_id` and

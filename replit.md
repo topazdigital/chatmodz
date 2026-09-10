@@ -17,6 +17,12 @@ The project uses two workflows:
 
 The web client proxies `/api` requests to the API.
 
+The operator queue contains only conversations whose newest message is from
+the member. Replies sent from Chatmodz or reported by a connected site as
+`managed_profile` remain in the full conversation history but are removed from
+the queue until a new member message arrives. Participant photos are returned
+only when the connected site supplies Chatmodz-proxied media paths.
+
 ## VPS / DirectAdmin deployment
 
 The browser client is a static Vite build and the API is a separate Node

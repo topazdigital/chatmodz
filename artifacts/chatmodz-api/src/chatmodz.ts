@@ -220,8 +220,14 @@ function secretFor(site: any) {
 }
 
 function operatorMediaPath(value: unknown) {
-  const path = typeof value === "string" ? value : ""
-  return path.startsWith("/api/chatmodz/media/") ? path : ""
+  const path = typeof value === "string" ? value.trim() : ""
+  if (path.startsWith("/api/chatmodz/media/")) return path
+  try {
+    const url = new URL(path)
+    return url.protocol === "https:" ? url.toString() : ""
+  } catch {
+    return ""
+  }
 }
 
 function signature(timestamp: string, body: string, secret: string) {

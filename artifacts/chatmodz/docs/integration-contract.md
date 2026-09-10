@@ -22,8 +22,8 @@ Content-Type: application/json
   "messageId": "message-789",
   "memberAlias": "Member 7831",
   "managedProfileAlias": "Maria",
-  "memberPhotoUrl": "/api/chatmodz/media/member-123",
-  "managedProfilePhotoUrl": "/api/chatmodz/media/profile-456",
+  "memberPhotoUrl": "https://richdatingnetwork.com/api/uploads/member-123.jpg",
+  "managedProfilePhotoUrl": "https://richdatingnetwork.com/api/uploads/profile-456.jpg",
   "sender": "member",
   "body": "Hi, how are you?",
   "sentAt": "2026-09-06T12:00:00Z"
@@ -33,8 +33,9 @@ Content-Type: application/json
 The adapter signs the exact raw JSON body with the site secret held in the
 Chatmodz API environment. Chatmodz verifies the timestamp window, deduplicates
 on `eventId`, maps the payload to the `conversations` and `messages` tables,
-then returns `202 Accepted`. Photo and media values must already be proxied
-through Chatmodz; operator responses reject raw external URLs.
+then returns `202 Accepted`. Photo values may be HTTPS URLs hosted by the
+connected site or Chatmodz-proxied media paths. HTTP URLs and malformed photo
+values are rejected before they reach the operator-facing API.
 
 The `sender` value may also be `managed_profile` when the connected site
 reports a reply sent directly from its own interface. These messages are
@@ -69,6 +70,7 @@ The browser talks only to Chatmodz. Delivery attempts are recorded in
   is not sufficient.
 - Use separate staff sessions/cookies from every dating-site app.
 - Return administrator-only site attribution from admin endpoints only.
-- Proxy media through Chatmodz before showing it to operators.
+- Use HTTPS photo URLs or proxy media through Chatmodz before showing it to
+  operators.
 - Never send `siteKey`, `internal_name`, endpoint URLs, or external IDs to an
   operator-facing endpoint.

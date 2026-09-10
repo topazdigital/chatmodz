@@ -21,7 +21,8 @@ The operator queue contains only conversations whose newest message is from
 the member. Replies sent from Chatmodz or reported by a connected site as
 `managed_profile` remain in the full conversation history but are removed from
 the queue until a new member message arrives. Participant photos are returned
-only when the connected site supplies Chatmodz-proxied media paths.
+when the connected site supplies either a Chatmodz-proxied media path or an
+HTTPS photo URL. HTTP photo URLs are intentionally rejected.
 
 ## VPS / DirectAdmin deployment
 
@@ -119,7 +120,10 @@ The adapter must:
    documented in `artifacts/chatmodz/docs/integration-contract.md`.
 3. Receive outgoing replies from the configured site delivery endpoint and
    write them back to the site's own message system.
-4. Keep the signing secret in Replit Secrets and proxy media through Chatmodz.
+4. Include participant photo URLs in `memberPhotoUrl` and
+   `managedProfilePhotoUrl`. Use HTTPS URLs or Chatmodz-proxied media paths;
+   the API will not expose HTTP URLs.
+5. Keep the signing secret in Replit Secrets and proxy media through Chatmodz.
 
 Chatmodz stores normalized conversations, messages, delivery attempts, locks,
 and audit activity in its own database while retaining the external IDs needed

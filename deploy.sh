@@ -28,10 +28,19 @@ echo "[4/5] Building Chatmodz API..."
 pnpm --filter @workspace/chatmodz-api run build
 
 echo "[5/5] Publishing Chatmodz and restarting only $API_PROCESS..."
-cp -a "$APP_DIR/artifacts/chatmodz/dist/." "$WEB_ROOT/"
-pm2 restart "$API_PROCESS"
+cp -a "$APP_DIR/artifacts/chatmodz/dist/public/." "$WEB_ROOT/"
+
+if [ "$(id -u)" -eq 0 ]; then
+  sudo -iu admin pm2 restart "$API_PROCESS"
+else
+  pm2 restart "$API_PROCESS"
+fi
 
 echo
 echo "Chatmodz deploy complete."
 echo "Commit: $(git rev-parse --short HEAD)"
-pm2 status "$API_PROCESS"
+if [ "$(id -u)" -eq 0 ]; then
+  sudo -iu admin pm2 status "$API_PROCESS"
+else
+  pm2 status "$API_PROCESS"
+fi

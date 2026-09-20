@@ -15,3 +15,9 @@ actually runnable.
 **How to apply:** Run the workspace install early, resolve only missing
 references that are demonstrably unused or required for the existing scripts,
 then restart the managed workflows and verify the visible app.
+
+When an imported pnpm workspace has package manifests inside artifact folders,
+keep those manifests as the source of truth for runtime dependencies. If the
+package-management flow installs at the workspace root, inspect the resulting
+root manifest and lockfile before committing so setup changes do not silently
+replace the artifact dependency structure.

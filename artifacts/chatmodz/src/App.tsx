@@ -976,6 +976,7 @@ function RecruiterPage() {
 
 function AdminPage() {
   const { token, user } = useSession();
+  const isAdministrator = user?.role === "admin" || (user?.admin ?? 0) >= 2;
   const [tab, setTab] = useState<"applications" | "operators" | "sites" | "report" | "compensation">("applications");
   const [data, setData] = useState<AdminData>({ applications: [], operators: [], sites: [], report: {} });
   const [compensation, setCompensation] = useState<CompensationData>(emptyCompensation);
@@ -984,7 +985,10 @@ function AdminPage() {
   const [loading, setLoading] = useState(true);
   const [notice, setNotice] = useState("");
   const load = useCallback(async () => {
-    if (!token || (user?.admin ?? 0) < 2) return;
+    if (!token || !isAdministrator) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
       const [applications, operators, sites, report, compensationResponse] = await Promise.all([
@@ -1004,9 +1008,9 @@ function AdminPage() {
     } finally {
       setLoading(false);
     }
-  }, [token, user?.admin]);
+  }, [token, isAdministrator]);
   useEffect(() => { load(); }, [load]);
-  if ((user?.admin ?? 0) < 2) return <Shell><div className="page"><div className="empty-state panel"><AlertTriangle size={28} /><strong>Administrator access required</strong><span>This control room is restricted to Chatmodz administrators.</span></div></div></Shell>;
+  if (!isAdministrator) return <Shell><div className="page"><div className="empty-state panel"><AlertTriangle size={28} /><strong>Administrator access required</strong><span>This control room is restricted to Chatmodz administrators.</span></div></div></Shell>;
   const action = async (url: string, method = "POST", body?: unknown) => {
     const response = await authFetch(token, url, { method, body: body ? JSON.stringify(body) : undefined });
     const result = await response.json().catch(() => ({}));

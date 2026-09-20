@@ -567,7 +567,11 @@ router.put("/conversations/:key/notes", requireChatmodzAuth, async (req, res) =>
       "UPDATE conversations SET operator_notes = ?, operator_notes_updated_at = NOW(), operator_notes_updated_by = ? WHERE id = ?",
       [text || null, req.chatmodzOperator!.id, conversationId],
     )
-    await recordActivity(req.chatmodzOperator!.id, "note", conversationId)
+    try {
+      await recordActivity(req.chatmodzOperator!.id, "note", conversationId)
+    } catch (activityError) {
+      console.error("[Chatmodz] Note saved but activity logging failed:", activityError)
+    }
     res.json({
       notes: {
         text,
@@ -576,6 +580,7 @@ router.put("/conversations/:key/notes", requireChatmodzAuth, async (req, res) =>
       },
     })
   } catch (error) {
+    console.error("[Chatmodz] Notes update failed:", error)
     if (failConfiguration(res, error)) return
     res.status(500).json({ error: "Notes unavailable" })
   }

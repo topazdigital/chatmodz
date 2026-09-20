@@ -16,7 +16,7 @@ type Operator = {
   public_id: string
   full_name: string
   email: string
-  role: "operator" | "admin"
+  role: "operator" | "recruiter" | "admin"
   status: string
 }
 
@@ -38,6 +38,13 @@ const demoLevels = [
 ]
 const demoEarnings: any[] = []
 const demoOperatorLevels = new Map<number, number>([[2, 1]])
+const demoRecruiterOperators: any[] = [
+  { id: 2, public_id: "demo-operator", full_name: "Demo Operator", email: "operator@chatmodz.test", role: "operator", status: "active", recruiter_id: 3, recruiter_name: "Demo Recruiter", last_active_at: new Date().toISOString(), created_at: new Date().toISOString(), activity_count: 12, replies: 8 },
+]
+const demoRecruiterActivity: any[] = [
+  { id: 1, operator_id: 2, operator_name: "Demo Operator", recruiter_id: 3, recruiter_name: "Demo Recruiter", activity_type: "reply", conversation_id: null, site_name: "Anonymized queue", created_at: new Date().toISOString(), metadata_json: null },
+  { id: 2, operator_id: 3, operator_name: "Demo Recruiter", recruiter_id: null, recruiter_name: null, activity_type: "login", conversation_id: null, site_name: null, created_at: new Date(Date.now() - 3600000).toISOString(), metadata_json: null },
+]
 
 function database() {
   const url = process.env.CHATMODZ_DATABASE_URL
@@ -50,15 +57,18 @@ function isDemoMode() {
   return process.env.CHATMODZ_DEMO_MODE === "true" && process.env.NODE_ENV !== "production"
 }
 
-function demoOperator(role: "admin" | "operator" = "admin"): Operator {
+function demoOperator(role: "admin" | "recruiter" | "operator" = "admin"): Operator {
   const isAdmin = role === "admin"
+  const isRecruiter = role === "recruiter"
   return {
-    id: isAdmin ? 1 : 2,
-    public_id: isAdmin ? "demo-admin" : "demo-operator",
-    full_name: isAdmin ? String(process.env.CHATMODZ_ADMIN_NAME || "Patrick Ndungu") : "Demo Operator",
+    id: isAdmin ? 1 : isRecruiter ? 3 : 2,
+    public_id: isAdmin ? "demo-admin" : isRecruiter ? "demo-recruiter" : "demo-operator",
+    full_name: isAdmin ? String(process.env.CHATMODZ_ADMIN_NAME || "Patrick Ndungu") : isRecruiter ? "Demo Recruiter" : "Demo Operator",
     email: isAdmin
       ? String(process.env.CHATMODZ_ADMIN_EMAIL || "").trim().toLowerCase()
-      : String(process.env.CHATMODZ_DEMO_OPERATOR_EMAIL || "operator@chatmodz.test").trim().toLowerCase(),
+      : isRecruiter
+        ? String(process.env.CHATMODZ_DEMO_RECRUITER_EMAIL || "recruiter@chatmodz.test").trim().toLowerCase()
+        : String(process.env.CHATMODZ_DEMO_OPERATOR_EMAIL || "operator@chatmodz.test").trim().toLowerCase(),
     role,
     status: "active",
   }
@@ -261,7 +271,7 @@ async function requireChatmodzAuth(req: Request, res: Response, next: NextFuncti
     if (!header.startsWith("Bearer ")) return res.status(401).json({ error: "Unauthorized" })
     const payload = jwt.verify(header.slice(7), jwtSecret(), { issuer: "chatmodz" }) as jwt.JwtPayload
     const operator = isDemoMode()
-      ? demoOperator(payload.role === "operator" ? "operator" : "admin")
+      ? demoOperator(payload.role === "operator" ? "operator" : payload.role === "recruiter" ? "recruiter" : "admin")
       : await loadOperator(Number(payload.operatorId))
     if (!operator || operator.status !== "active") return res.status(401).json({ error: "Session is no longer active" })
     req.chatmodzOperator = operator
@@ -275,6 +285,11 @@ async function requireChatmodzAuth(req: Request, res: Response, next: NextFuncti
 
 function requireChatmodzAdmin(req: Request, res: Response, next: NextFunction) {
   if (req.chatmodzOperator?.role !== "admin") return res.status(403).json({ error: "Administrator access required" })
+  next()
+}
+
+function requireChatmodzRecruiter(req: Request, res: Response, next: NextFunction) {
+  if (!["admin", "recruiter"].includes(req.chatmodzOperator?.role || "")) return res.status(403).json({ error: "Recruiter or administrator access required" })
   next()
 }
 
@@ -392,11 +407,14 @@ router.post("/auth/login", async (req, res) => {
     if (!configuredPassword || !timingSafeEqualText(password, configuredPassword)) {
       return res.status(401).json({ error: "Invalid demo credentials" })
     }
+    const recruiterEmail = String(process.env.CHATMODZ_DEMO_RECRUITER_EMAIL || "recruiter@chatmodz.test").trim().toLowerCase()
     const operator = identifier === configuredEmail
       ? demoOperator("admin")
-      : identifier === operatorEmail
-        ? demoOperator("operator")
-        : null
+      : identifier === recruiterEmail
+        ? demoOperator("recruiter")
+        : identifier === operatorEmail
+          ? demoOperator("operator")
+          : null
     if (!operator) return res.status(401).json({ error: "Invalid demo credentials" })
     return res.json({ token: tokenFor(operator), user: publicOperator(operator), demo: true })
   }
@@ -850,7 +868,11 @@ router.post("/admin/applications/:id/reject", requireChatmodzAuth, requireChatmo
 })
 
 router.get("/admin/operators", requireChatmodzAuth, requireChatmodzAdmin, async (_req, res) => {
-  if (isDemoMode()) return res.json({ operators: [{ id: 1, public_id: "demo-admin", full_name: demoOperator().full_name, email: demoOperator().email, role: "admin", status: "active", last_active_at: new Date().toISOString(), created_at: new Date().toISOString() }], demo: true })
+  if (isDemoMode()) return res.json({ operators: [
+    { id: 1, public_id: "demo-admin", full_name: demoOperator().full_name, email: demoOperator().email, role: "admin", status: "active", last_active_at: new Date().toISOString(), created_at: new Date().toISOString() },
+    { id: 3, public_id: "demo-recruiter", full_name: demoOperator("recruiter").full_name, email: demoOperator("recruiter").email, role: "recruiter", status: "active", last_active_at: new Date().toISOString(), created_at: new Date().toISOString() },
+    { id: 2, public_id: "demo-operator", full_name: demoOperator("operator").full_name, email: demoOperator("operator").email, role: "operator", status: "active", last_active_at: new Date().toISOString(), created_at: new Date().toISOString() },
+  ], demo: true })
   try { res.json({ operators: await query("SELECT id, public_id, full_name, email, role, status, last_active_at, created_at FROM operators ORDER BY created_at DESC") }) }
   catch (error) { if (!failConfiguration(res, error)) res.status(500).json({ error: "Operators unavailable" }) }
 })
@@ -860,6 +882,168 @@ router.post("/admin/operators/:id/status", requireChatmodzAuth, requireChatmodzA
   if (!["training", "active", "suspended", "rejected"].includes(status)) return res.status(400).json({ error: "Invalid operator status" })
   try { await query("UPDATE operators SET status = ? WHERE id = ?", [status, Number(req.params.id)]); res.json({ updated: true }) }
   catch (error) { if (!failConfiguration(res, error)) res.status(500).json({ error: "Could not update operator" }) }
+})
+
+router.post("/admin/operators/:id/role", requireChatmodzAuth, requireChatmodzAdmin, async (req, res) => {
+  const operatorId = Number(req.params.id)
+  const role = String(req.body?.role || "")
+  if (!operatorId || !["operator", "recruiter"].includes(role)) return res.status(400).json({ error: "Choose operator or recruiter" })
+  if (operatorId === req.chatmodzOperator!.id) return res.status(400).json({ error: "Your administrator role cannot be changed here" })
+  if (isDemoMode()) {
+    if (![2, 3].includes(operatorId)) return res.status(404).json({ error: "Operator not found" })
+    return res.json({ updated: true, demo: true })
+  }
+  try {
+    await withTransaction(async (connection) => {
+      await connection.execute("UPDATE operators SET recruiter_id = NULL WHERE recruiter_id = ?", [operatorId])
+      const result: any = await connection.execute("UPDATE operators SET role = ? WHERE id = ? AND role <> 'admin'", [role, operatorId])
+      if (!Number(result[0]?.affectedRows || 0)) throw Object.assign(new Error("Operator not found"), { code: "NOT_FOUND" })
+      await connection.execute("INSERT INTO audit_log (actor_operator_id, action, entity_type, entity_id, metadata_json) VALUES (?, 'change_operator_role', 'operator', ?, ?)", [req.chatmodzOperator!.id, operatorId, JSON.stringify({ role })])
+    })
+    res.json({ updated: true })
+  } catch (error: any) {
+    if (error?.code === "NOT_FOUND") return res.status(404).json({ error: "Operator not found" })
+    if (!failConfiguration(res)) res.status(500).json({ error: "Could not update operator role" })
+  }
+})
+
+function recruiterOverviewDemo(viewer: Operator) {
+  const operators = viewer.role === "admin"
+    ? demoRecruiterOperators
+    : demoRecruiterOperators.filter((operator) => Number(operator.recruiter_id) === viewer.id)
+  const activities = viewer.role === "admin"
+    ? demoRecruiterActivity
+    : demoRecruiterActivity.filter((activity) => Number(activity.recruiter_id) === viewer.id || Number(activity.operator_id) === viewer.id)
+  return {
+    recruiters: [
+      { id: 3, full_name: "Demo Recruiter", email: "recruiter@chatmodz.test", status: "active", last_active_at: new Date().toISOString(), recruited_count: operators.length, activity_count: activities.filter((activity) => Number(activity.operator_id) === 3).length },
+    ],
+    operators,
+    activities,
+    summary: { recruiters: viewer.role === "admin" ? 1 : 0, operators: operators.length, active: operators.filter((operator) => operator.status === "active").length, activities: activities.length },
+    demo: true,
+  }
+}
+
+router.get("/recruiter/overview", requireChatmodzAuth, requireChatmodzRecruiter, async (req, res) => {
+  const viewer = req.chatmodzOperator!
+  if (isDemoMode()) return res.json(recruiterOverviewDemo(viewer))
+  try {
+    const operatorFilter = viewer.role === "admin" ? "" : "WHERE o.recruiter_id = ?"
+    const operatorParams = viewer.role === "admin" ? [] : [viewer.id]
+    const operators = await query<any>(
+      `SELECT o.id, o.public_id, o.full_name, o.email, o.role, o.status, o.recruiter_id,
+          r.full_name AS recruiter_name, o.last_active_at, o.created_at,
+          COUNT(DISTINCT a.id) AS activity_count,
+          COUNT(DISTINCT CASE WHEN a.activity_type = 'reply' THEN a.id END) AS replies
+       FROM operators o
+       LEFT JOIN operators r ON r.id = o.recruiter_id
+       LEFT JOIN operator_activity a ON a.operator_id = o.id
+       ${operatorFilter ? `${operatorFilter} AND` : "WHERE"} o.role = 'operator'
+       GROUP BY o.id, o.public_id, o.full_name, o.email, o.role, o.status, o.recruiter_id, r.full_name, o.last_active_at, o.created_at
+       ORDER BY o.created_at DESC`,
+      operatorParams,
+    )
+    const activityFilter = viewer.role === "admin" ? "" : "WHERE a.operator_id = ? OR o.recruiter_id = ?"
+    const activityParams = viewer.role === "admin" ? [] : [viewer.id, viewer.id]
+    const activities = await query<any>(
+      `SELECT a.id, a.operator_id, o.full_name AS operator_name, o.recruiter_id,
+          r.full_name AS recruiter_name, a.activity_type, a.conversation_id,
+          s.display_name AS site_name, a.metadata_json, a.created_at
+       FROM operator_activity a
+       JOIN operators o ON o.id = a.operator_id
+       LEFT JOIN operators r ON r.id = o.recruiter_id
+       LEFT JOIN sites s ON s.id = a.site_id
+       ${activityFilter}
+       ORDER BY a.created_at DESC LIMIT 250`,
+      activityParams,
+    )
+    const recruiters = viewer.role === "admin"
+      ? await query<any>(
+        `SELECT r.id, r.full_name, r.email, r.status, r.last_active_at,
+            COUNT(DISTINCT o.id) AS recruited_count,
+            COUNT(DISTINCT a.id) AS activity_count
+         FROM operators r
+         LEFT JOIN operators o ON o.recruiter_id = r.id
+         LEFT JOIN operator_activity a ON a.operator_id = r.id
+         WHERE r.role = 'recruiter'
+         GROUP BY r.id, r.full_name, r.email, r.status, r.last_active_at
+         ORDER BY r.created_at DESC`,
+      )
+      : []
+    res.json({
+      recruiters,
+      operators,
+      activities,
+      summary: {
+        recruiters: recruiters.length,
+        operators: operators.length,
+        active: operators.filter((operator) => operator.status === "active").length,
+        activities: activities.length,
+      },
+    })
+  } catch (error) {
+    if (!failConfiguration(res, error)) res.status(500).json({ error: "Recruiter overview unavailable" })
+  }
+})
+
+router.post("/recruiter/operators", requireChatmodzAuth, requireChatmodzRecruiter, async (req, res) => {
+  const fullName = String(req.body?.fullName || "").trim().slice(0, 160)
+  const email = String(req.body?.email || "").trim().toLowerCase()
+  if (!fullName || !email.includes("@")) return res.status(400).json({ error: "Full name and a valid email are required" })
+  const recruiterId = req.chatmodzOperator!.role === "recruiter" ? req.chatmodzOperator!.id : Number(req.body?.recruiterId || 0)
+  if (!recruiterId) return res.status(400).json({ error: "Choose a recruiter for this operator" })
+  if (isDemoMode()) {
+    const id = Math.max(0, ...demoRecruiterOperators.map((operator) => Number(operator.id))) + 1
+    const activationCode = `cmz-demo-${crypto.randomBytes(10).toString("hex")}`
+    demoRecruiterOperators.unshift({ id, public_id: `demo-operator-${id}`, full_name: fullName, email, role: "operator", status: "training", recruiter_id: recruiterId, recruiter_name: req.chatmodzOperator!.role === "recruiter" ? req.chatmodzOperator!.full_name : "Demo Recruiter", last_active_at: null, created_at: new Date().toISOString(), activity_count: 0, replies: 0 })
+    return res.status(201).json({ recruited: true, activationCode, expiresInHours: 72, demo: true })
+  }
+  try {
+    const recruiter = await query<any>("SELECT id FROM operators WHERE id = ? AND role = 'recruiter' LIMIT 1", [recruiterId])
+    if (!recruiter[0]) return res.status(404).json({ error: "Recruiter not found" })
+    const existing = await query<any>("SELECT id FROM operators WHERE email = ? LIMIT 1", [email])
+    if (existing[0]) return res.status(409).json({ error: "An operator already uses this email" })
+    const operatorPublicId = crypto.randomBytes(13).toString("base64url")
+    const passwordHash = await bcrypt.hash(crypto.randomBytes(32).toString("hex"), 12)
+    const activationCode = `cmz-${crypto.randomBytes(18).toString("base64url")}`
+    await withTransaction(async (connection) => {
+      const created: any = await connection.execute(
+        "INSERT INTO operators (public_id, full_name, email, password_hash, role, status, recruiter_id) VALUES (?, ?, ?, ?, 'operator', 'training', ?)",
+        [operatorPublicId, fullName, email, passwordHash, recruiterId],
+      )
+      await connection.execute("INSERT INTO operator_activation_codes (operator_id, code_hash, expires_at) VALUES (?, ?, DATE_ADD(NOW(), INTERVAL 72 HOUR))", [created[0].insertId, sha256(activationCode)])
+      await connection.execute("INSERT INTO operator_activity (operator_id, activity_type, metadata_json) VALUES (?, 'training', ?)", [created[0].insertId, JSON.stringify({ recruitedBy: recruiterId })])
+      await connection.execute("INSERT INTO audit_log (actor_operator_id, action, entity_type, entity_id, metadata_json) VALUES (?, 'recruit_operator', 'operator', ?, ?)", [req.chatmodzOperator!.id, created[0].insertId, JSON.stringify({ recruiterId })])
+    })
+    res.status(201).json({ recruited: true, activationCode, expiresInHours: 72 })
+  } catch (error: any) {
+    if (!failConfiguration(res, error)) res.status(error?.code === "ER_DUP_ENTRY" ? 409 : 500).json({ error: error?.code === "ER_DUP_ENTRY" ? "An operator already uses this email" : "Could not recruit operator" })
+  }
+})
+
+router.post("/recruiter/operators/:id/status", requireChatmodzAuth, requireChatmodzRecruiter, async (req, res) => {
+  const operatorId = Number(req.params.id)
+  const status = String(req.body?.status || "")
+  if (!["training", "active", "suspended", "rejected"].includes(status)) return res.status(400).json({ error: "Invalid operator status" })
+  if (isDemoMode()) {
+    const operator = demoRecruiterOperators.find((item) => Number(item.id) === operatorId && (req.chatmodzOperator!.role === "admin" || Number(item.recruiter_id) === req.chatmodzOperator!.id))
+    if (!operator) return res.status(404).json({ error: "Operator not found in your team" })
+    operator.status = status
+    return res.json({ updated: true, demo: true })
+  }
+  try {
+    const owned = req.chatmodzOperator!.role === "admin"
+      ? await query<any>("SELECT id FROM operators WHERE id = ? AND role = 'operator' LIMIT 1", [operatorId])
+      : await query<any>("SELECT id FROM operators WHERE id = ? AND role = 'operator' AND recruiter_id = ? LIMIT 1", [operatorId, req.chatmodzOperator!.id])
+    if (!owned[0]) return res.status(404).json({ error: "Operator not found in your team" })
+    await query("UPDATE operators SET status = ? WHERE id = ?", [status, operatorId])
+    await recordActivity(operatorId, "training", undefined, undefined, { changedBy: req.chatmodzOperator!.id, status })
+    await query("INSERT INTO audit_log (actor_operator_id, action, entity_type, entity_id, metadata_json) VALUES (?, 'change_operator_status', 'operator', ?, ?)", [req.chatmodzOperator!.id, operatorId, JSON.stringify({ status })])
+    res.json({ updated: true })
+  } catch (error) {
+    if (!failConfiguration(res)) res.status(500).json({ error: "Could not update operator status" })
+  }
 })
 
 router.get("/admin/compensation", requireChatmodzAuth, requireChatmodzAdmin, async (_req, res) => {

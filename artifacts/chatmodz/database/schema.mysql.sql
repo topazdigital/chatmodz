@@ -27,15 +27,18 @@ CREATE TABLE IF NOT EXISTS operators (
   full_name VARCHAR(160) NOT NULL,
   email VARCHAR(255) NOT NULL,
   password_hash VARCHAR(255) NOT NULL,
-  role ENUM('operator', 'admin') NOT NULL DEFAULT 'operator',
+  role ENUM('operator', 'recruiter', 'admin') NOT NULL DEFAULT 'operator',
   status ENUM('pending', 'training', 'active', 'suspended', 'rejected') NOT NULL DEFAULT 'pending',
+  recruiter_id BIGINT UNSIGNED NULL,
   last_active_at TIMESTAMP NULL,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
   UNIQUE KEY operators_public_id_unique (public_id),
   UNIQUE KEY operators_email_unique (email),
-  KEY operators_status_idx (status)
+  KEY operators_status_idx (status),
+  KEY operators_recruiter_idx (recruiter_id),
+  CONSTRAINT operators_recruiter_fk FOREIGN KEY (recruiter_id) REFERENCES operators (id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS operator_levels (

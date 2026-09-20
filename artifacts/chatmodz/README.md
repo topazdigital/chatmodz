@@ -17,6 +17,11 @@ The web artifact is a live-data client for the dedicated Chatmodz API:
   and browser push notification controls
 - administrator-only application approval, operator status, site health,
   attribution, delivery reporting, and operator compensation levels
+- three-level staff hierarchy: administrators manage recruiters, recruiters
+  recruit and monitor their assigned operators, and operators work only from
+  the anonymized queue
+- recruiter ownership and activity monitoring with administrator-wide
+  oversight
 - per-message earnings snapshots that preserve the operator level and rate used
   when each reply was delivered
 
@@ -30,6 +35,10 @@ database.
 Chatmodz is designed for its own MySQL 8 database. Apply
 `database/schema.mysql.sql` to a dedicated database when the live API is
 connected. Do not point it at a dating site's database.
+
+If applying the recruiter hierarchy to an existing Chatmodz database, update
+the `operators.role` enum to include `recruiter` and add the nullable
+`operators.recruiter_id` self-reference before deploying the new API.
 
 The database stores normalized conversations and messages plus the original
 `site_id` and external IDs needed to route replies back to the correct site.

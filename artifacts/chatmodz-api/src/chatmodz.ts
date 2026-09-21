@@ -134,7 +134,7 @@ export async function initializeChatmodz() {
     if (process.env.CHATMODZ_ADMIN_EMAIL && process.env.CHATMODZ_ADMIN_PASSWORD) {
       await ensureBootstrapAdmin()
     }
-    await ensurePerformanceIndexes()
+    void ensurePerformanceIndexes()
   } catch (error) {
     console.error("Chatmodz startup initialization failed:", error instanceof Error ? error.message : error)
   }

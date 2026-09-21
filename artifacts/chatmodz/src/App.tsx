@@ -308,7 +308,7 @@ function LoginPage() {
       <Logo />
       <div className="eyebrow">Secure operator access</div>
       <h1>Welcome back.</h1>
-      <p>Sign in with the credentials issued by your operations administrator.</p>
+      <p>Sign in with the email you used to apply and the password you created during activation.</p>
       {import.meta.env.DEV && <div className="notice" style={{ marginBottom: 18 }}><ShieldCheck size={13} /> Replit demo: use the configured administrator credentials, or sign in as <strong>operator@chatmodz.test</strong> with the same development password to preview the queue-only operator role.</div>}
       <form onSubmit={submit} className="auth-form">
         <label htmlFor="identifier">Operator email</label>
@@ -318,7 +318,69 @@ function LoginPage() {
         {error && <div className="auth-error"><AlertTriangle size={14} />{error}</div>}
         <button className="button primary auth-submit" disabled={submitting}>{submitting ? "Signing in…" : "Sign in"} <ChevronRight size={15} /></button>
       </form>
-      <div className="auth-links"><Link href="/apply" className="auth-back">Apply to become an operator</Link><Link href="/welcome" className="auth-back"><ChevronLeft size={14} /> Back to Chatmodz</Link></div>
+      <div className="auth-links"><Link href="/activate" className="auth-back">Have an activation code? Set your password</Link><Link href="/apply" className="auth-back">Apply to become an operator</Link><Link href="/welcome" className="auth-back"><ChevronLeft size={14} /> Back to Chatmodz</Link></div>
+    </div>
+  </div>;
+}
+
+function ActivationPage() {
+  const [, setLocation] = useLocation();
+  const [code, setCode] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmation, setConfirmation] = useState("");
+  const [error, setError] = useState("");
+  const [activated, setActivated] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setError("");
+    if (password !== confirmation) {
+      setError("The passwords do not match.");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const response = await fetch("/api/chatmodz/auth/activate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code, password }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "Could not activate this operator account");
+      setActivated(true);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not activate this operator account");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return <div className="auth-page">
+    <div className="auth-card">
+      <Logo />
+      <div className="eyebrow">First-time operator setup</div>
+      <h1>Set your password.</h1>
+      {activated ? <div className="application-success">
+        <ShieldCheck size={24} />
+        <strong>Account activated.</strong>
+        <span>Your activation code has been used. Sign in with your application email and the password you just created.</span>
+        <button className="button primary" type="button" onClick={() => setLocation("/login")}>Continue to sign in <ChevronRight size={15} /></button>
+      </div> : <>
+        <p>Your administrator’s one-time code is used here to create your login password. The code itself is not your password.</p>
+        <form onSubmit={submit} className="auth-form">
+          <label htmlFor="activation-code">One-time activation code</label>
+          <input id="activation-code" className="form-field mono" value={code} onChange={(event) => setCode(event.target.value)} autoComplete="one-time-code" required />
+          <label htmlFor="new-password">Create password</label>
+          <input id="new-password" className="form-field" type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="new-password" minLength={10} required />
+          <small>Use at least 10 characters. This is the password you will use after activation.</small>
+          <label htmlFor="confirm-password">Confirm password</label>
+          <input id="confirm-password" className="form-field" type="password" value={confirmation} onChange={(event) => setConfirmation(event.target.value)} autoComplete="new-password" minLength={10} required />
+          {error && <div className="auth-error"><AlertTriangle size={14} />{error}</div>}
+          <button className="button primary auth-submit" disabled={submitting}>{submitting ? "Activating…" : "Activate account"} <ChevronRight size={15} /></button>
+        </form>
+        <div className="auth-links"><Link href="/login" className="auth-back">Already activated? Sign in</Link><Link href="/welcome" className="auth-back"><ChevronLeft size={14} /> Back to Chatmodz</Link></div>
+      </>}
     </div>
   </div>;
 }
@@ -1091,7 +1153,7 @@ function AuthenticatedRouter() {
   const { user, loading } = useSession();
   const [location] = useLocation();
   if (loading) return <div className="auth-loading"><RefreshCw className="spin" size={24} /><span>Checking secure session…</span></div>;
-  if (!user) return <Switch><Route path="/login" component={LoginPage} /><Route path="/apply" component={ApplyPage} /><Route path="/welcome" component={LandingPage} /><Route component={LandingPage} /></Switch>;
+  if (!user) return <Switch><Route path="/login" component={LoginPage} /><Route path="/activate" component={ActivationPage} /><Route path="/apply" component={ApplyPage} /><Route path="/welcome" component={LandingPage} /><Route component={LandingPage} /></Switch>;
   return <ErrorBoundary resetKey={location}><Switch><Route path="/" component={HomePage} /><Route path="/earnings" component={EarningsPage} /><Route path="/conversation/:id" component={ConversationPage} /><Route path="/reports" component={ReportsPage} /><Route path="/recruiter" component={RecruiterPage} /><Route path="/admin" component={AdminPage} /><Route path="/settings" component={SettingsPage} /><Route component={NotFound} /></Switch></ErrorBoundary>;
 }
 

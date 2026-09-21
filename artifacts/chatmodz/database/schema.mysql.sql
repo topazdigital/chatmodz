@@ -152,6 +152,8 @@ CREATE TABLE IF NOT EXISTS messages (
   PRIMARY KEY (id),
   UNIQUE KEY messages_external_unique (conversation_id, external_message_id),
   KEY messages_conversation_sent_idx (conversation_id, sent_at),
+  KEY messages_conversation_latest_idx (conversation_id, sender_type, sent_at, id),
+  KEY messages_operator_sent_idx (sent_by_operator_id, sent_at),
   CONSTRAINT messages_conversation_fk FOREIGN KEY (conversation_id) REFERENCES conversations (id) ON DELETE CASCADE,
   CONSTRAINT messages_operator_fk FOREIGN KEY (sent_by_operator_id) REFERENCES operators (id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -213,6 +215,8 @@ CREATE TABLE IF NOT EXISTS integration_deliveries (
   PRIMARY KEY (id),
   UNIQUE KEY deliveries_event_unique (site_id, direction, external_event_id),
   KEY deliveries_status_received_idx (status, received_at),
+  KEY deliveries_site_status_idx (site_id, status),
+  KEY deliveries_conversation_status_idx (conversation_id, status),
   CONSTRAINT deliveries_site_fk FOREIGN KEY (site_id) REFERENCES sites (id) ON DELETE CASCADE,
   CONSTRAINT deliveries_conversation_fk FOREIGN KEY (conversation_id) REFERENCES conversations (id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

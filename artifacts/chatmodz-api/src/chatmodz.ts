@@ -29,6 +29,8 @@ declare global {
 }
 
 let pool: Pool | null = null
+const lastActiveTouch = new Map<number, number>()
+const LAST_ACTIVE_TOUCH_INTERVAL_MS = 60_000
 const demoApplications: any[] = []
 const demoConversationNotes = new Map<number, { text: string; updatedAt: string | null; updatedByName: string | null }>()
 const demoLevels = [
@@ -100,16 +102,41 @@ async function ensureBootstrapAdmin() {
   console.log("Chatmodz bootstrap administrator created")
 }
 
+async function ensurePerformanceIndexes() {
+  const indexes = [
+    ["messages", "messages_conversation_latest_idx", "conversation_id, sender_type, sent_at, id"],
+    ["messages", "messages_operator_sent_idx", "sent_by_operator_id, sent_at"],
+    ["integration_deliveries", "deliveries_site_status_idx", "site_id, status"],
+    ["integration_deliveries", "deliveries_conversation_status_idx", "conversation_id, status"],
+  ] as const
+  for (const [tableName, indexName, columns] of indexes) {
+    try {
+      const existing = await query<any>(
+        "SELECT 1 AS present FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = ? AND index_name = ? LIMIT 1",
+        [tableName, indexName],
+      )
+      if (!existing.length) {
+        await query(`ALTER TABLE \`${tableName}\` ADD INDEX \`${indexName}\` (${columns})`)
+        console.log(`[Chatmodz] Added performance index ${indexName}`)
+      }
+    } catch (error) {
+      console.error(`[Chatmodz] Could not ensure performance index ${indexName}:`, error instanceof Error ? error.message : error)
+    }
+  }
+}
+
 export async function initializeChatmodz() {
   if (isDemoMode()) {
     console.log("Chatmodz development demo mode enabled; MySQL persistence is disabled")
     return
   }
-  if (!process.env.CHATMODZ_ADMIN_EMAIL || !process.env.CHATMODZ_ADMIN_PASSWORD) return
   try {
-    await ensureBootstrapAdmin()
+    if (process.env.CHATMODZ_ADMIN_EMAIL && process.env.CHATMODZ_ADMIN_PASSWORD) {
+      await ensureBootstrapAdmin()
+    }
+    await ensurePerformanceIndexes()
   } catch (error) {
-    console.error("Chatmodz bootstrap administrator was not provisioned:", error instanceof Error ? error.message : error)
+    console.error("Chatmodz startup initialization failed:", error instanceof Error ? error.message : error)
   }
 }
 
@@ -275,7 +302,15 @@ async function requireChatmodzAuth(req: Request, res: Response, next: NextFuncti
       : await loadOperator(Number(payload.operatorId))
     if (!operator || operator.status !== "active") return res.status(401).json({ error: "Session is no longer active" })
     req.chatmodzOperator = operator
-    if (!isDemoMode()) await query("UPDATE operators SET last_active_at = NOW() WHERE id = ?", [operator.id])
+    if (!isDemoMode()) {
+      const now = Date.now()
+      const previousTouch = lastActiveTouch.get(operator.id) || 0
+      if (now - previousTouch >= LAST_ACTIVE_TOUCH_INTERVAL_MS) {
+        lastActiveTouch.set(operator.id, now)
+        void query("UPDATE operators SET last_active_at = NOW() WHERE id = ?", [operator.id])
+          .catch((error) => console.error("[Chatmodz] Last-active update failed:", error))
+      }
+    }
     next()
   } catch (error) {
     if (failConfiguration(res, error)) return
@@ -424,7 +459,8 @@ router.post("/auth/login", async (req, res) => {
     if (!operator || !(await bcrypt.compare(password, operator.password_hash))) return res.status(401).json({ error: "Invalid credentials" })
     if (operator.status !== "active") return res.status(403).json({ error: "This operator account is not active" })
     const safe = publicOperator(operator)
-    await recordActivity(operator.id, "login")
+    void recordActivity(operator.id, "login")
+      .catch((error) => console.error("[Chatmodz] Login activity logging failed:", error))
     res.json({ token: tokenFor(operator), user: safe })
   } catch (error) {
     if (failConfiguration(res, error)) return
@@ -463,16 +499,20 @@ router.get("/conversations", requireChatmodzAuth, async (req, res) => {
   if (isDemoMode()) return res.json({ conversations: [], total: 0, page: 1, pages: 1, demo: true })
   try {
     const rows = await query<any>(`
-      SELECT c.*,
-        (SELECT body FROM messages m WHERE m.conversation_id = c.id ORDER BY m.sent_at DESC, m.id DESC LIMIT 1) AS last_message,
-        (SELECT sender_type FROM messages m WHERE m.conversation_id = c.id ORDER BY m.sent_at DESC, m.id DESC LIMIT 1) AS last_sender_type,
-        (SELECT delivery_status FROM messages m WHERE m.conversation_id = c.id ORDER BY m.sent_at DESC, m.id DESC LIMIT 1) AS last_delivery_status,
+      SELECT c.*, latest.body AS last_message, latest.sender_type AS last_sender_type,
+        latest.delivery_status AS last_delivery_status,
         (SELECT COUNT(*) FROM messages m WHERE m.conversation_id = c.id) AS msg_count
       FROM conversations c
+      JOIN messages latest ON latest.id = (
+        SELECT m.id FROM messages m
+        WHERE m.conversation_id = c.id
+        ORDER BY m.sent_at DESC, m.id DESC
+        LIMIT 1
+      )
       WHERE c.status <> 'closed'
         AND (c.lock_expires_at IS NULL OR c.lock_expires_at < NOW() OR c.assigned_operator_id = ?)
-        AND (SELECT sender_type FROM messages m WHERE m.conversation_id = c.id ORDER BY m.sent_at DESC, m.id DESC LIMIT 1) = 'member'
-      ORDER BY CASE WHEN (SELECT sender_type FROM messages m WHERE m.conversation_id = c.id ORDER BY m.sent_at DESC, m.id DESC LIMIT 1) = 'member' THEN 0 ELSE 1 END, c.last_message_at DESC
+        AND latest.sender_type = 'member'
+      ORDER BY c.last_message_at DESC
       LIMIT 100
     `, [req.chatmodzOperator!.id])
     const conversations = rows.map((row) => ({
@@ -685,14 +725,22 @@ router.post("/conversations/:key/reply", requireChatmodzAuth, async (req, res) =
 router.get("/stats", requireChatmodzAuth, async (req, res) => {
   if (isDemoMode()) return res.json({ activeLocks: 0, totalConversations: 0, messagesSent: 0, demo: true })
   try {
-    const [conversation] = await query<any>(`
+    const [[conversation], [locks], [sent]] = await Promise.all([
+      query<any>(`
       SELECT COUNT(*) AS total
       FROM conversations c
+      JOIN messages latest ON latest.id = (
+        SELECT m.id FROM messages m
+        WHERE m.conversation_id = c.id
+        ORDER BY m.sent_at DESC, m.id DESC
+        LIMIT 1
+      )
       WHERE c.status <> 'closed'
-        AND (SELECT sender_type FROM messages m WHERE m.conversation_id = c.id ORDER BY m.sent_at DESC, m.id DESC LIMIT 1) = 'member'
-    `)
-    const [locks] = await query<any>("SELECT COUNT(*) AS total FROM conversations WHERE assigned_operator_id IS NOT NULL AND lock_expires_at > NOW()")
-    const [sent] = await query<any>("SELECT COUNT(*) AS total FROM messages WHERE sent_by_operator_id = ?", [req.chatmodzOperator!.id])
+        AND latest.sender_type = 'member'
+      `),
+      query<any>("SELECT COUNT(*) AS total FROM conversations WHERE assigned_operator_id IS NOT NULL AND lock_expires_at > NOW()"),
+      query<any>("SELECT COUNT(*) AS total FROM messages WHERE sent_by_operator_id = ?", [req.chatmodzOperator!.id]),
+    ])
     res.json({ activeLocks: Number(locks?.total || 0), totalConversations: Number(conversation?.total || 0), messagesSent: Number(sent?.total || 0) })
   } catch (error) {
     if (failConfiguration(res, error)) return
@@ -750,7 +798,10 @@ router.post("/integrations/:siteKey/messages", async (req, res) => {
       await connection.execute("INSERT INTO messages (conversation_id, external_message_id, sender_type, body, delivery_status, sent_at) VALUES (?, ?, ?, ?, 'received', ?)", [conversationId, payload.messageId, senderType, payload.body, new Date(payload.sentAt || Date.now())])
       await connection.execute("INSERT INTO integration_deliveries (site_id, direction, external_event_id, conversation_id, status, attempt_count, payload_json) VALUES (?, 'incoming', ?, ?, 'processed', 1, ?)", [site.id, payload.eventId, conversationId, JSON.stringify(payload)])
     })
-    if (senderType === "member") await notifyPush("New conversation message", "A member message is waiting in the operator queue").catch(() => undefined)
+    if (senderType === "member") {
+      void notifyPush("New conversation message", "A member message is waiting in the operator queue")
+        .catch((error) => console.error("[Chatmodz] Push notification failed:", error))
+    }
     res.status(202).json({ accepted: true })
   } catch (error: any) {
     if (failConfiguration(res, error)) return
@@ -773,36 +824,38 @@ router.get("/earnings", requireChatmodzAuth, async (req, res) => {
     })
   }
   try {
-    const [level] = await query<any>(
-      `SELECT l.id, l.name, l.description, l.rate_minor, l.currency
-       FROM operator_levels l
-       LEFT JOIN operator_level_assignments a ON a.level_id = l.id AND a.operator_id = ?
-       WHERE l.active = 1 AND (a.operator_id IS NOT NULL OR l.is_default = 1)
-       ORDER BY CASE WHEN a.operator_id IS NOT NULL THEN 0 ELSE 1 END, l.id
-       LIMIT 1`,
-      [operatorId],
-    )
-    const [summary] = await query<any>(
-      `SELECT
-         COALESCE(SUM(CASE WHEN status <> 'void' THEN rate_minor ELSE 0 END), 0) AS lifetime_minor,
-         COALESCE(SUM(CASE WHEN status = 'pending' THEN rate_minor ELSE 0 END), 0) AS pending_minor,
-         COALESCE(SUM(CASE WHEN status = 'paid' THEN rate_minor ELSE 0 END), 0) AS paid_minor,
-         COALESCE(SUM(CASE WHEN status <> 'void' AND created_at >= DATE_FORMAT(CURRENT_DATE, '%Y-%m-01') THEN rate_minor ELSE 0 END), 0) AS current_month_minor,
-         COUNT(CASE WHEN status <> 'void' THEN 1 END) AS total_messages
-       FROM operator_earnings
-       WHERE operator_id = ?`,
-      [operatorId],
-    )
-    const recent = await query<any>(
-      `SELECT e.id, e.message_id, e.level_id, l.name AS level_name, e.rate_minor, e.currency,
-          e.status, e.paid_at, e.created_at
-       FROM operator_earnings e
-       JOIN operator_levels l ON l.id = e.level_id
-       WHERE e.operator_id = ?
-       ORDER BY e.created_at DESC
-       LIMIT 100`,
-      [operatorId],
-    )
+    const [[level], [summary], recent] = await Promise.all([
+      query<any>(
+        `SELECT l.id, l.name, l.description, l.rate_minor, l.currency
+         FROM operator_levels l
+         LEFT JOIN operator_level_assignments a ON a.level_id = l.id AND a.operator_id = ?
+         WHERE l.active = 1 AND (a.operator_id IS NOT NULL OR l.is_default = 1)
+         ORDER BY CASE WHEN a.operator_id IS NOT NULL THEN 0 ELSE 1 END, l.id
+         LIMIT 1`,
+        [operatorId],
+      ),
+      query<any>(
+        `SELECT
+           COALESCE(SUM(CASE WHEN status <> 'void' THEN rate_minor ELSE 0 END), 0) AS lifetime_minor,
+           COALESCE(SUM(CASE WHEN status = 'pending' THEN rate_minor ELSE 0 END), 0) AS pending_minor,
+           COALESCE(SUM(CASE WHEN status = 'paid' THEN rate_minor ELSE 0 END), 0) AS paid_minor,
+           COALESCE(SUM(CASE WHEN status <> 'void' AND created_at >= DATE_FORMAT(CURRENT_DATE, '%Y-%m-01') THEN rate_minor ELSE 0 END), 0) AS current_month_minor,
+           COUNT(CASE WHEN status <> 'void' THEN 1 END) AS total_messages
+         FROM operator_earnings
+         WHERE operator_id = ?`,
+        [operatorId],
+      ),
+      query<any>(
+        `SELECT e.id, e.message_id, e.level_id, l.name AS level_name, e.rate_minor, e.currency,
+            e.status, e.paid_at, e.created_at
+         FROM operator_earnings e
+         JOIN operator_levels l ON l.id = e.level_id
+         WHERE e.operator_id = ?
+         ORDER BY e.created_at DESC
+         LIMIT 100`,
+        [operatorId],
+      ),
+    ])
     res.json({
       level: level ? {
         id: Number(level.id),
@@ -936,7 +989,7 @@ router.get("/recruiter/overview", requireChatmodzAuth, requireChatmodzRecruiter,
   try {
     const operatorFilter = viewer.role === "admin" ? "" : "WHERE o.recruiter_id = ?"
     const operatorParams = viewer.role === "admin" ? [] : [viewer.id]
-    const operators = await query<any>(
+    const operatorsPromise = query<any>(
       `SELECT o.id, o.public_id, o.full_name, o.email, o.role, o.status, o.recruiter_id,
           r.full_name AS recruiter_name, o.last_active_at, o.created_at,
           COUNT(DISTINCT a.id) AS activity_count,
@@ -951,7 +1004,7 @@ router.get("/recruiter/overview", requireChatmodzAuth, requireChatmodzRecruiter,
     )
     const activityFilter = viewer.role === "admin" ? "" : "WHERE a.operator_id = ? OR o.recruiter_id = ?"
     const activityParams = viewer.role === "admin" ? [] : [viewer.id, viewer.id]
-    const activities = await query<any>(
+    const activitiesPromise = query<any>(
       `SELECT a.id, a.operator_id, o.full_name AS operator_name, o.recruiter_id,
           r.full_name AS recruiter_name, a.activity_type, a.conversation_id,
           s.display_name AS site_name, a.metadata_json, a.created_at
@@ -963,8 +1016,8 @@ router.get("/recruiter/overview", requireChatmodzAuth, requireChatmodzRecruiter,
        ORDER BY a.created_at DESC LIMIT 250`,
       activityParams,
     )
-    const recruiters = viewer.role === "admin"
-      ? await query<any>(
+    const recruitersPromise = viewer.role === "admin"
+      ? query<any>(
         `SELECT r.id, r.full_name, r.email, r.status, r.last_active_at,
             COUNT(DISTINCT o.id) AS recruited_count,
             COUNT(DISTINCT a.id) AS activity_count
@@ -975,7 +1028,8 @@ router.get("/recruiter/overview", requireChatmodzAuth, requireChatmodzRecruiter,
          GROUP BY r.id, r.full_name, r.email, r.status, r.last_active_at
          ORDER BY r.created_at DESC`,
       )
-      : []
+      : Promise.resolve<any[]>([])
+    const [operators, activities, recruiters] = await Promise.all([operatorsPromise, activitiesPromise, recruitersPromise])
     res.json({
       recruiters,
       operators,
@@ -1075,53 +1129,55 @@ router.get("/admin/compensation", requireChatmodzAuth, requireChatmodzAdmin, asy
     })
   }
   try {
-    const levels = await query<any>(
-      `SELECT l.*, COUNT(DISTINCT a.operator_id) AS assigned_operators
-       FROM operator_levels l
-       LEFT JOIN operator_level_assignments a ON a.level_id = l.id
-       GROUP BY l.id, l.name, l.slug, l.description, l.rate_minor, l.currency, l.is_default, l.active, l.created_at, l.updated_at
-       ORDER BY l.rate_minor ASC, l.id ASC`,
-    )
-    const operators = await query<any>(
-      `SELECT o.id, o.full_name, o.email, o.role, o.status,
-          l.id AS level_id, l.name AS level_name, l.rate_minor, l.currency AS level_currency,
-          COALESCE(SUM(CASE WHEN e.status <> 'void' THEN e.rate_minor ELSE 0 END), 0) AS earned_minor,
-          COUNT(CASE WHEN e.status <> 'void' THEN e.id END) AS earned_messages
-       FROM operators o
-       LEFT JOIN operator_level_assignments a ON a.operator_id = o.id
-       LEFT JOIN operator_levels l ON l.id = a.level_id
-       LEFT JOIN operator_earnings e ON e.operator_id = o.id
-       GROUP BY o.id, o.full_name, o.email, o.role, o.status, l.id, l.name, l.rate_minor, l.currency
-       ORDER BY MAX(o.created_at) DESC`,
-    )
-    const [summary] = await query<any>(
-      `SELECT
-         COUNT(CASE WHEN status <> 'void' THEN 1 END) AS total_messages,
-         COALESCE(SUM(CASE WHEN status <> 'void' THEN rate_minor ELSE 0 END), 0) AS accrued_minor,
-         COALESCE(SUM(CASE WHEN status = 'paid' THEN rate_minor ELSE 0 END), 0) AS paid_minor,
-         COALESCE(SUM(CASE WHEN status = 'pending' THEN rate_minor ELSE 0 END), 0) AS pending_minor
-       FROM operator_earnings`,
-    )
-    const byLevel = await query<any>(
-      `SELECT l.id, l.name,
-          COUNT(CASE WHEN e.status <> 'void' THEN e.id END) AS messages,
-          COALESCE(SUM(CASE WHEN e.status <> 'void' THEN e.rate_minor ELSE 0 END), 0) AS accrued_minor
-       FROM operator_levels l
-       LEFT JOIN operator_earnings e ON e.level_id = l.id
-       GROUP BY l.id, l.name
-       ORDER BY l.rate_minor ASC, l.id ASC`,
-    )
-    const recent = await query<any>(
-      `SELECT e.id, e.message_id, e.operator_id, o.full_name AS operator_name,
-          e.level_id, l.name AS level_name, e.rate_minor, e.currency, e.status,
-          e.paid_at, e.created_at, m.conversation_id
-       FROM operator_earnings e
-       JOIN operators o ON o.id = e.operator_id
-       JOIN operator_levels l ON l.id = e.level_id
-       JOIN messages m ON m.id = e.message_id
-       ORDER BY e.created_at DESC
-       LIMIT 100`,
-    )
+    const [levels, operators, [summary], byLevel, recent] = await Promise.all([
+      query<any>(
+        `SELECT l.*, COUNT(DISTINCT a.operator_id) AS assigned_operators
+         FROM operator_levels l
+         LEFT JOIN operator_level_assignments a ON a.level_id = l.id
+         GROUP BY l.id, l.name, l.slug, l.description, l.rate_minor, l.currency, l.is_default, l.active, l.created_at, l.updated_at
+         ORDER BY l.rate_minor ASC, l.id ASC`,
+      ),
+      query<any>(
+        `SELECT o.id, o.full_name, o.email, o.role, o.status,
+            l.id AS level_id, l.name AS level_name, l.rate_minor, l.currency AS level_currency,
+            COALESCE(SUM(CASE WHEN e.status <> 'void' THEN e.rate_minor ELSE 0 END), 0) AS earned_minor,
+            COUNT(CASE WHEN e.status <> 'void' THEN e.id END) AS earned_messages
+         FROM operators o
+         LEFT JOIN operator_level_assignments a ON a.operator_id = o.id
+         LEFT JOIN operator_levels l ON l.id = a.level_id
+         LEFT JOIN operator_earnings e ON e.operator_id = o.id
+         GROUP BY o.id, o.full_name, o.email, o.role, o.status, l.id, l.name, l.rate_minor, l.currency
+         ORDER BY MAX(o.created_at) DESC`,
+      ),
+      query<any>(
+        `SELECT
+           COUNT(CASE WHEN status <> 'void' THEN 1 END) AS total_messages,
+           COALESCE(SUM(CASE WHEN status <> 'void' THEN rate_minor ELSE 0 END), 0) AS accrued_minor,
+           COALESCE(SUM(CASE WHEN status = 'paid' THEN rate_minor ELSE 0 END), 0) AS paid_minor,
+           COALESCE(SUM(CASE WHEN status = 'pending' THEN rate_minor ELSE 0 END), 0) AS pending_minor
+         FROM operator_earnings`,
+      ),
+      query<any>(
+        `SELECT l.id, l.name,
+            COUNT(CASE WHEN e.status <> 'void' THEN e.id END) AS messages,
+            COALESCE(SUM(CASE WHEN e.status <> 'void' THEN e.rate_minor ELSE 0 END), 0) AS accrued_minor
+         FROM operator_levels l
+         LEFT JOIN operator_earnings e ON e.level_id = l.id
+         GROUP BY l.id, l.name
+         ORDER BY l.rate_minor ASC, l.id ASC`,
+      ),
+      query<any>(
+        `SELECT e.id, e.message_id, e.operator_id, o.full_name AS operator_name,
+            e.level_id, l.name AS level_name, e.rate_minor, e.currency, e.status,
+            e.paid_at, e.created_at, m.conversation_id
+         FROM operator_earnings e
+         JOIN operators o ON o.id = e.operator_id
+         JOIN operator_levels l ON l.id = e.level_id
+         JOIN messages m ON m.id = e.message_id
+         ORDER BY e.created_at DESC
+         LIMIT 100`,
+      ),
+    ])
     res.json({
       levels: levels.map(compensationLevel),
       operators: operators.map(compensationOperator),
@@ -1315,9 +1371,39 @@ router.post("/admin/sites/:id/status", requireChatmodzAuth, requireChatmodzAdmin
 router.get("/admin/report", requireChatmodzAuth, requireChatmodzAdmin, async (_req, res) => {
   if (isDemoMode()) return res.json({ summary: { conversations: 0, replies: 0, failed_deliveries: 0 }, byOperator: [{ id: 1, name: demoOperator().full_name, replies: 0 }], bySite: [], demo: true })
   try {
-    const [summary] = await query<any>("SELECT COUNT(DISTINCT c.id) AS conversations, COUNT(DISTINCT CASE WHEN m.sender_type = 'managed_profile' THEN m.id END) AS replies, SUM(CASE WHEN d.status = 'failed' THEN 1 ELSE 0 END) AS failed_deliveries FROM conversations c LEFT JOIN messages m ON m.conversation_id = c.id LEFT JOIN integration_deliveries d ON d.conversation_id = c.id")
-    const byOperator = await query("SELECT o.id, o.full_name AS name, COUNT(m.id) AS replies FROM operators o LEFT JOIN messages m ON m.sent_by_operator_id = o.id GROUP BY o.id, o.full_name ORDER BY replies DESC")
-    const bySite = await query("SELECT s.id, s.internal_name, s.display_name, s.status, COUNT(DISTINCT c.id) AS conversations, SUM(CASE WHEN d.status = 'failed' THEN 1 ELSE 0 END) AS failed_deliveries FROM sites s LEFT JOIN conversations c ON c.site_id = s.id LEFT JOIN integration_deliveries d ON d.site_id = s.id GROUP BY s.id, s.internal_name, s.display_name, s.status ORDER BY conversations DESC")
+    const [[summary], byOperator, bySite] = await Promise.all([
+      query<any>(
+        `SELECT
+           (SELECT COUNT(*) FROM conversations) AS conversations,
+           (SELECT COUNT(*) FROM messages WHERE sender_type = 'managed_profile') AS replies,
+           (SELECT COUNT(*) FROM integration_deliveries WHERE status = 'failed') AS failed_deliveries`,
+      ),
+      query(
+        `SELECT o.id, o.full_name AS name, COUNT(m.id) AS replies
+         FROM operators o
+         LEFT JOIN messages m ON m.sent_by_operator_id = o.id
+         GROUP BY o.id, o.full_name
+         ORDER BY replies DESC`,
+      ),
+      query(
+        `SELECT s.id, s.internal_name, s.display_name, s.status,
+           COALESCE(c.conversations, 0) AS conversations,
+           COALESCE(d.failed_deliveries, 0) AS failed_deliveries
+         FROM sites s
+         LEFT JOIN (
+           SELECT site_id, COUNT(*) AS conversations
+           FROM conversations
+           GROUP BY site_id
+         ) c ON c.site_id = s.id
+         LEFT JOIN (
+           SELECT site_id, COUNT(*) AS failed_deliveries
+           FROM integration_deliveries
+           WHERE status = 'failed'
+           GROUP BY site_id
+         ) d ON d.site_id = s.id
+         ORDER BY conversations DESC`,
+      ),
+    ])
     res.json({ summary, byOperator, bySite })
   } catch (error) { if (!failConfiguration(res, error)) res.status(500).json({ error: "Report unavailable" }) }
 })

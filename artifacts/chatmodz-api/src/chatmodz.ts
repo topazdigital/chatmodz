@@ -275,8 +275,47 @@ function operatorMediaPath(value: unknown, siteBaseUrl?: unknown) {
   return resolveOperatorMediaUrl(value, siteBaseUrl)
 }
 
+function isRichDatingHost(value: unknown) {
+  if (typeof value !== "string" || !value.trim()) return false
+  try {
+    const hostname = new URL(value).hostname.toLowerCase()
+    return hostname === "richdatingnetwork.com" || hostname.endsWith(".richdatingnetwork.com")
+  } catch {
+    return false
+  }
+}
+
+function normalizeRichProfilePhoto(value: unknown, siteBaseUrl?: unknown) {
+  let photo = typeof value === "string" ? value.trim() : ""
+  if (!photo || !isRichDatingHost(siteBaseUrl)) return photo
+
+  try {
+    const parsed = new URL(photo.startsWith("//") ? `https:${photo}` : photo)
+    if (parsed.hostname.toLowerCase() === "richdatingnetwork.com" || parsed.hostname.toLowerCase().endsWith(".richdatingnetwork.com")) {
+      photo = `${parsed.pathname}${parsed.search}${parsed.hash}`
+    }
+  } catch {
+    // Database values are often stored as a relative path or bare filename.
+  }
+
+  if (photo.startsWith("/api/uploads/")) return photo
+  const uploadPrefixes = [
+    "/assets/sources/uploads/",
+    "assets/sources/uploads/",
+    "/uploads/",
+    "uploads/",
+    "/photos/",
+    "photos/",
+  ]
+  for (const prefix of uploadPrefixes) {
+    if (photo.startsWith(prefix)) return `/api/uploads/${photo.slice(prefix.length)}`
+  }
+  if (photo.startsWith("/")) return photo
+  return `/api/uploads/${photo}`
+}
+
 function profilePhotoPath(value: unknown, siteBaseUrl?: unknown) {
-  const resolved = resolveOperatorMediaUrl(value, siteBaseUrl)
+  const resolved = resolveOperatorMediaUrl(normalizeRichProfilePhoto(value, siteBaseUrl), siteBaseUrl)
   if (!resolved || resolved.startsWith("/api/chatmodz/media/")) return resolved
   try {
     const url = new URL(resolved)

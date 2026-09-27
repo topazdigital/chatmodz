@@ -221,11 +221,38 @@ function photoUrl(photo?: string) {
 }
 
 function Avatar({ photo, name, size = 36 }: { photo?: string; name: string; size?: number }) {
+  const { token } = useSession();
   const [failed, setFailed] = useState(false);
+  const [source, setSource] = useState("");
   const initials = name.split(" ").map((part) => part[0]).join("").slice(0, 2).toUpperCase();
   const style = { width: size, height: size, fontSize: Math.max(10, size * 0.32) };
-  if (photo && !failed) {
-    return <img className="real-avatar" src={photoUrl(photo)} alt={name} style={style} onError={() => setFailed(true)} />;
+  useEffect(() => {
+    let objectUrl = "";
+    const resolved = photoUrl(photo);
+    setFailed(false);
+    setSource("");
+    if (!resolved) return;
+    if (!resolved.startsWith("/api/chatmodz/profile-photo")) {
+      setSource(resolved);
+      return;
+    }
+    const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
+    fetch(resolved, { headers })
+      .then((response) => {
+        if (!response.ok) throw new Error("Profile photo unavailable");
+        return response.blob();
+      })
+      .then((blob) => {
+        objectUrl = URL.createObjectURL(blob);
+        setSource(objectUrl);
+      })
+      .catch(() => setFailed(true));
+    return () => {
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [photo, token]);
+  if (source && !failed) {
+    return <img className="real-avatar" src={source} alt={name} style={style} onError={() => setFailed(true)} />;
   }
   return <div className="avatar" style={style}>{initials || "?"}</div>;
 }

@@ -10,6 +10,7 @@ const LOCK_MINUTES = 10
 const MIN_REPLY_CHARS = 20
 const MAX_OPERATOR_NOTES = 5000
 const SIGNATURE_WINDOW_MS = 5 * 60 * 1000
+const MAX_PROFILE_PHOTO_BYTES = 5 * 1024 * 1024
 
 type Operator = {
   id: number
@@ -256,7 +257,7 @@ function secretFor(site: any) {
   return envKey ? process.env[envKey] || "" : ""
 }
 
-function operatorMediaPath(value: unknown, siteBaseUrl?: unknown) {
+function resolveOperatorMediaUrl(value: unknown, siteBaseUrl?: unknown) {
   const path = typeof value === "string" ? value.trim() : ""
   if (!path) return ""
   if (path.startsWith("/api/chatmodz/media/")) return path
@@ -268,6 +269,38 @@ function operatorMediaPath(value: unknown, siteBaseUrl?: unknown) {
   } catch {
     return ""
   }
+}
+
+function operatorMediaPath(value: unknown, siteBaseUrl?: unknown) {
+  return resolveOperatorMediaUrl(value, siteBaseUrl)
+}
+
+function profilePhotoPath(value: unknown, siteBaseUrl?: unknown) {
+  const resolved = resolveOperatorMediaUrl(value, siteBaseUrl)
+  if (!resolved || resolved.startsWith("/api/chatmodz/media/")) return resolved
+  try {
+    const url = new URL(resolved)
+    return url.protocol === "http:"
+      ? `/api/chatmodz/profile-photo?url=${encodeURIComponent(url.toString())}`
+      : resolved
+  } catch {
+    return ""
+  }
+}
+
+function hostnameMatchesAllowedHost(hostname: string, allowedHostname: string) {
+  return hostname === allowedHostname || hostname.endsWith(`.${allowedHostname}`)
+}
+
+async function allowedPhotoHost(hostname: string) {
+  const sites = await query<any>("SELECT endpoint_base_url FROM sites WHERE status = 'active' AND endpoint_base_url IS NOT NULL")
+  return sites.some((site) => {
+    try {
+      return hostnameMatchesAllowedHost(hostname, new URL(String(site.endpoint_base_url)).hostname)
+    } catch {
+      return false
+    }
+  })
 }
 
 function signature(timestamp: string, body: string, secret: string) {
@@ -403,6 +436,47 @@ router.get("/health", async (_req, res) => {
   }
 })
 
+router.get("/profile-photo", requireChatmodzAuth, async (req, res) => {
+  const requestedUrl = typeof req.query.url === "string" ? req.query.url : ""
+  if (!requestedUrl) return res.status(400).json({ error: "Photo URL is required" })
+  try {
+    let target = new URL(requestedUrl)
+    if (!["http:", "https:"].includes(target.protocol) || !(await allowedPhotoHost(target.hostname))) {
+      return res.status(403).json({ error: "Photo host is not approved" })
+    }
+    let response: globalThis.Response | null = null
+    for (let redirect = 0; redirect <= 3; redirect += 1) {
+      response = await fetch(target, {
+        redirect: "manual",
+        headers: { Accept: "image/*" },
+      })
+      if (![301, 302, 303, 307, 308].includes(response.status)) break
+      const location = response.headers.get("location")
+      if (!location) return res.status(502).json({ error: "Photo redirect was invalid" })
+      target = new URL(location, target)
+      if (!["http:", "https:"].includes(target.protocol) || !(await allowedPhotoHost(target.hostname))) {
+        return res.status(403).json({ error: "Photo redirect host is not approved" })
+      }
+      if (redirect === 3) return res.status(502).json({ error: "Photo redirected too many times" })
+    }
+    if (!response || !response.ok) return res.status(502).json({ error: "Photo could not be loaded" })
+    const contentType = response.headers.get("content-type") || "application/octet-stream"
+    if (!contentType.toLowerCase().startsWith("image/")) return res.status(415).json({ error: "Photo response was not an image" })
+    const declaredLength = Number(response.headers.get("content-length") || 0)
+    if (declaredLength > MAX_PROFILE_PHOTO_BYTES) return res.status(413).json({ error: "Photo is too large" })
+    const body = Buffer.from(await response.arrayBuffer())
+    if (body.length > MAX_PROFILE_PHOTO_BYTES) return res.status(413).json({ error: "Photo is too large" })
+    res.setHeader("Content-Type", contentType)
+    res.setHeader("Content-Length", body.length)
+    res.setHeader("Cache-Control", "private, max-age=300")
+    res.send(body)
+  } catch (error) {
+    if (failConfiguration(res, error)) return
+    console.error("[Chatmodz] Profile photo proxy failed:", error instanceof Error ? error.message : error)
+    res.status(502).json({ error: "Photo could not be loaded" })
+  }
+})
+
 router.post("/applications", async (req, res) => {
   const { fullName, email, location, experience } = req.body || {}
   if (!String(fullName || "").trim() || !String(email || "").includes("@")) {
@@ -522,8 +596,8 @@ router.get("/conversations", requireChatmodzAuth, async (req, res) => {
     `, [req.chatmodzOperator!.id])
     const conversations = rows.map((row) => ({
       key: publicKey(Number(row.id)),
-      fakeUser: { id: -1, name: row.managed_profile_alias, photo: operatorMediaPath(row.managed_profile_photo_url, row.site_endpoint_base_url) },
-      realUser: { id: -2, name: row.member_alias, photo: operatorMediaPath(row.member_photo_url, row.site_endpoint_base_url) },
+      fakeUser: { id: -1, name: row.managed_profile_alias, photo: profilePhotoPath(row.managed_profile_photo_url, row.site_endpoint_base_url) },
+      realUser: { id: -2, name: row.member_alias, photo: profilePhotoPath(row.member_photo_url, row.site_endpoint_base_url) },
       lastMessage: row.last_message || "",
       lastTime: Math.floor(new Date(row.last_message_at).getTime() / 1000),
       msgCount: Number(row.msg_count || 0),
@@ -573,8 +647,8 @@ router.get("/conversations/:key/messages", requireChatmodzAuth, async (req, res)
         mediaType: row.media_type || "",
       })),
       users: {
-        "-1": { id: -1, name: conversation.managed_profile_alias, photo: operatorMediaPath(conversation.managed_profile_photo_url, conversation.site_endpoint_base_url) },
-        "-2": { id: -2, name: conversation.member_alias, photo: operatorMediaPath(conversation.member_photo_url, conversation.site_endpoint_base_url) },
+        "-1": { id: -1, name: conversation.managed_profile_alias, photo: profilePhotoPath(conversation.managed_profile_photo_url, conversation.site_endpoint_base_url) },
+        "-2": { id: -2, name: conversation.member_alias, photo: profilePhotoPath(conversation.member_photo_url, conversation.site_endpoint_base_url) },
       },
       notes: {
         text: conversation.operator_notes || "",

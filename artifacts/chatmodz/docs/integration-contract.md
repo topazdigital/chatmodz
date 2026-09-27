@@ -37,6 +37,8 @@ then returns `202 Accepted`. Photo values may be absolute HTTP(S) URLs,
 protocol-relative URLs, paths relative to the connected site's endpoint, or
 Chatmodz-proxied media paths. Relative values are resolved against the
 connected site's configured endpoint before being returned to operators.
+HTTP profile photos are loaded through Chatmodz's authenticated photo proxy so
+they continue to work when the operator workspace is served over HTTPS.
 Empty, unsupported, and malformed values are ignored.
 
 The `sender` value may also be `managed_profile` when the connected site

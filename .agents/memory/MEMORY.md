@@ -1,1 +1,2 @@
 - [Imported workspace validation](imported-workspace-validation.md) — verify package references and shared configs immediately after import, before relying on the generated run workflow.
+- [GitHub smart-HTTP authentication](github-smart-http-auth.md) — use Basic auth with x-access-token for Git pushes when a bearer extraheader is rejected.

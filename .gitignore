@@ -5,3 +5,5 @@ dist/
 .env.*
 !.env.example
 .cache/
+attached_assets/image_1790479396651.png
+attached_assets/image_1790479414916.png

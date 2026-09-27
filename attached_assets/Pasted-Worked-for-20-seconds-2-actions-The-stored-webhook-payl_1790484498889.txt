@@ -1,0 +1,41 @@
+Worked for 20 seconds
+
+2 actions
+The stored webhook payloads contain no photo fields at all. They only include the aliases, message content, and timestamps:
+
+memberPhotoUrl is absent
+managedProfilePhotoUrl is absent
+That is why the production columns are MISSING, and why neither the proxy nor the frontend can display an image. The Chatmodz integration handler is behaving correctly: it stores the two photo fields when they are present, and preserves the existing values when later messages omit them.
+
+The required fix is in the connected dating-site adapter. Its outgoing payload needs to include the actual image URLs, for example:
+
+{
+  "eventId": "rdn-message-...",
+  "conversationId": "rdn-369-7987",
+  "messageId": "rdn-message-...",
+  "memberAlias": "Centy",
+  "managedProfileAlias": "Giacomo",
+  "memberPhotoUrl": "https://richdatingnetwork.com/.../centy-photo.jpg",
+  "managedProfilePhotoUrl": "https://richdatingnetwork.com/.../giacomo-photo.jpg",
+  "sender": "member",
+  "body": "How dear?",
+  "sentAt": "2026-09-26T17:22:59.000Z"
+}
+The adapter must then replay/sync those profiles or send another message containing the fields. Existing conversations will not be backfilled from the website automatically, because Chatmodz has no website database access or profile credentials.
+
+I cannot safely implement the upstream change from this workspace because the connected-site adapter is not present here.
+
+Where is the connected dating-site adapter code?
+https://github.com/topazdigital/Latest-Rich
+
+Worked for 15 seconds
+Considering GitHub access
+
+Considering GitHub access
+I’ll inspect the Rich adapter’s webhook construction, identify where the member and managed-profile records already expose image URLs, then patch the payload and verify its tests/build. I’ll keep the Chatmodz contract unchanged unless the adapter uses a different source field.
+
+
+13 actions
+
+Worked for 36 seconds
+You've reached your monthly free quota limit. It will reset on October 16, 2026.

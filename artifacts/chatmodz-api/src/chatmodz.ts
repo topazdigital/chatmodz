@@ -256,12 +256,15 @@ function secretFor(site: any) {
   return envKey ? process.env[envKey] || "" : ""
 }
 
-function operatorMediaPath(value: unknown) {
+function operatorMediaPath(value: unknown, siteBaseUrl?: unknown) {
   const path = typeof value === "string" ? value.trim() : ""
+  if (!path) return ""
   if (path.startsWith("/api/chatmodz/media/")) return path
+  const candidate = path.startsWith("//") ? `https:${path}` : path
   try {
-    const url = new URL(path)
-    return url.protocol === "https:" ? url.toString() : ""
+    const siteBase = typeof siteBaseUrl === "string" ? new URL(siteBaseUrl) : null
+    const url = new URL(candidate, siteBase ? `${siteBase.origin}/` : undefined)
+    return url.protocol === "https:" || url.protocol === "http:" ? url.toString() : ""
   } catch {
     return ""
   }
@@ -499,10 +502,12 @@ router.get("/conversations", requireChatmodzAuth, async (req, res) => {
   if (isDemoMode()) return res.json({ conversations: [], total: 0, page: 1, pages: 1, demo: true })
   try {
     const rows = await query<any>(`
-      SELECT c.*, latest.body AS last_message, latest.sender_type AS last_sender_type,
+      SELECT c.*, s.endpoint_base_url AS site_endpoint_base_url,
+        latest.body AS last_message, latest.sender_type AS last_sender_type,
         latest.delivery_status AS last_delivery_status,
         (SELECT COUNT(*) FROM messages m WHERE m.conversation_id = c.id) AS msg_count
       FROM conversations c
+      JOIN sites s ON s.id = c.site_id
       JOIN messages latest ON latest.id = (
         SELECT m.id FROM messages m
         WHERE m.conversation_id = c.id
@@ -517,8 +522,8 @@ router.get("/conversations", requireChatmodzAuth, async (req, res) => {
     `, [req.chatmodzOperator!.id])
     const conversations = rows.map((row) => ({
       key: publicKey(Number(row.id)),
-      fakeUser: { id: -1, name: row.managed_profile_alias, photo: operatorMediaPath(row.managed_profile_photo_url) },
-      realUser: { id: -2, name: row.member_alias, photo: operatorMediaPath(row.member_photo_url) },
+      fakeUser: { id: -1, name: row.managed_profile_alias, photo: operatorMediaPath(row.managed_profile_photo_url, row.site_endpoint_base_url) },
+      realUser: { id: -2, name: row.member_alias, photo: operatorMediaPath(row.member_photo_url, row.site_endpoint_base_url) },
       lastMessage: row.last_message || "",
       lastTime: Math.floor(new Date(row.last_message_at).getTime() / 1000),
       msgCount: Number(row.msg_count || 0),
@@ -549,7 +554,7 @@ router.get("/conversations/:key/messages", requireChatmodzAuth, async (req, res)
   }
   try {
     const conversations = await query<any>(
-      "SELECT c.*, o.full_name AS operator_notes_updated_by_name FROM conversations c LEFT JOIN operators o ON o.id = c.operator_notes_updated_by WHERE c.id = ? LIMIT 1",
+      "SELECT c.*, s.endpoint_base_url AS site_endpoint_base_url, o.full_name AS operator_notes_updated_by_name FROM conversations c JOIN sites s ON s.id = c.site_id LEFT JOIN operators o ON o.id = c.operator_notes_updated_by WHERE c.id = ? LIMIT 1",
       [conversationId],
     )
     const conversation = conversations[0]
@@ -568,8 +573,8 @@ router.get("/conversations/:key/messages", requireChatmodzAuth, async (req, res)
         mediaType: row.media_type || "",
       })),
       users: {
-        "-1": { id: -1, name: conversation.managed_profile_alias, photo: operatorMediaPath(conversation.managed_profile_photo_url) },
-        "-2": { id: -2, name: conversation.member_alias, photo: operatorMediaPath(conversation.member_photo_url) },
+        "-1": { id: -1, name: conversation.managed_profile_alias, photo: operatorMediaPath(conversation.managed_profile_photo_url, conversation.site_endpoint_base_url) },
+        "-2": { id: -2, name: conversation.member_alias, photo: operatorMediaPath(conversation.member_photo_url, conversation.site_endpoint_base_url) },
       },
       notes: {
         text: conversation.operator_notes || "",

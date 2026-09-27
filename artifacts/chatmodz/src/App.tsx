@@ -213,9 +213,11 @@ function timeAgo(timestamp: number) {
 }
 
 function photoUrl(photo?: string) {
-  if (!photo) return "";
-  if (photo.startsWith("http") || photo.startsWith("/")) return photo;
-  return `/api/uploads/${photo}`;
+  const value = photo?.trim();
+  if (!value) return "";
+  if (value.startsWith("//")) return `https:${value}`;
+  if (/^(https?:|data:|blob:)/i.test(value) || value.startsWith("/")) return value;
+  return `/api/uploads/${encodeURIComponent(value)}`;
 }
 
 function Avatar({ photo, name, size = 36 }: { photo?: string; name: string; size?: number }) {

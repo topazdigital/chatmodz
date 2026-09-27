@@ -22,7 +22,8 @@ the member. Replies sent from Chatmodz or reported by a connected site as
 `managed_profile` remain in the full conversation history but are removed from
 the queue until a new member message arrives. Participant photos are returned
 when the connected site supplies either a Chatmodz-proxied media path or an
-HTTPS photo URL. HTTP photo URLs are intentionally rejected.
+HTTPS photo URL, a protocol-relative URL, or a path relative to the connected
+site's endpoint. Unsupported or malformed values are ignored.
 
 ## VPS / DirectAdmin deployment
 
@@ -121,8 +122,8 @@ The adapter must:
 3. Receive outgoing replies from the configured site delivery endpoint and
    write them back to the site's own message system.
 4. Include participant photo URLs in `memberPhotoUrl` and
-   `managedProfilePhotoUrl`. Use HTTPS URLs or Chatmodz-proxied media paths;
-   the API will not expose HTTP URLs.
+   `managedProfilePhotoUrl`. Use absolute HTTP(S) URLs, paths relative to the
+   connected site's endpoint, or Chatmodz-proxied media paths.
 5. Keep the signing secret in Replit Secrets and proxy media through Chatmodz.
 
 Chatmodz stores normalized conversations, messages, delivery attempts, locks,

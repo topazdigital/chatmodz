@@ -893,6 +893,28 @@ router.delete("/push/unsubscribe", requireChatmodzAuth, async (req, res) => {
   }
 })
 
+router.post("/integrations/:siteKey/profiles", async (req, res) => {
+  const siteKey = String(req.params.siteKey || "")
+  const payload = req.body || {}
+  const conversationId = typeof payload.conversationId === "string" ? payload.conversationId.trim() : ""
+  const memberPhotoUrl = typeof payload.memberPhotoUrl === "string" ? payload.memberPhotoUrl.trim() : ""
+  const managedProfilePhotoUrl = typeof payload.managedProfilePhotoUrl === "string" ? payload.managedProfilePhotoUrl.trim() : ""
+  if (!conversationId || (!memberPhotoUrl && !managedProfilePhotoUrl)) return res.status(400).json({ error: "A conversation and at least one profile photo are required" })
+  try {
+    const sites = await query<any>("SELECT * FROM sites WHERE internal_name = ? AND status = 'active' LIMIT 1", [siteKey])
+    const site = sites[0]
+    if (!site || !signedRequestIsValid(req, secretFor(site))) return res.status(401).json({ error: "Invalid integration signature" })
+    await query(
+      "UPDATE conversations SET member_photo_url = COALESCE(NULLIF(?, ''), member_photo_url), managed_profile_photo_url = COALESCE(NULLIF(?, ''), managed_profile_photo_url) WHERE site_id = ? AND external_conversation_id = ?",
+      [memberPhotoUrl || null, managedProfilePhotoUrl || null, site.id, conversationId],
+    )
+    res.status(202).json({ accepted: true })
+  } catch (error) {
+    if (failConfiguration(res, error)) return
+    res.status(500).json({ error: "Could not update profile photos" })
+  }
+})
+
 router.post("/integrations/:siteKey/messages", async (req, res) => {
   const siteKey = String(req.params.siteKey || "")
   const payload = req.body || {}

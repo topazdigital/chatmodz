@@ -966,3 +966,166 @@ body { color: var(--ink); }
   .inline-conversation .conversation-main { min-height: 600px; }
   .inline-empty { min-height: 420px; }
 }
+
+/* Whole-site operator theme and compact desk */
+:root {
+  --ink: #14263f;
+  --ink-soft: #64748b;
+  --paper: #f4f7fa;
+  --paper-deep: #e8eef4;
+  --line: #d7e0e9;
+  --amber: #e5b24f;
+  --amber-soft: #fff2d1;
+  --teal: #388b82;
+  --teal-soft: #def2ee;
+  --red-soft: #fde5e0;
+  --surface: #ffffff;
+  --surface-soft: #f7f9fb;
+  --surface-tint: #eef3f7;
+}
+
+html,
+body,
+.landing-page,
+.auth-page,
+.auth-loading,
+.app-frame,
+.content-shell {
+  background: var(--paper);
+}
+
+.panel,
+.metric-card,
+.auth-card,
+.inline-empty {
+  background: var(--surface);
+  border-color: var(--line);
+}
+
+.topbar {
+  background: rgba(244, 247, 250, .94);
+  border-color: var(--line);
+}
+
+.filters,
+.data-table th,
+.level-form,
+.canned,
+.settings-tab:hover,
+.settings-tab.selected {
+  background: var(--surface-tint);
+}
+
+.search-field,
+.form-field,
+.composer textarea,
+.notes-field {
+  background: var(--surface-soft);
+}
+
+.queue-row:hover,
+.activity-row:hover,
+.data-table tr:hover td {
+  background: #f0f7f7;
+}
+
+.message.member .bubble {
+  background: var(--surface);
+  border-color: #d7e2e9;
+}
+
+.message.operator .bubble {
+  background: var(--ink);
+  border-color: var(--ink);
+}
+
+.conversation-main,
+.conversation-side,
+.metric-card,
+.panel {
+  box-shadow: 0 8px 24px rgba(20, 38, 63, .055);
+}
+
+.landing-icon,
+.application-success,
+.payout-callout,
+.report-callout,
+.media-pending {
+  background: var(--teal-soft);
+}
+
+.landing-icon.teal-icon {
+  background: var(--amber-soft);
+}
+
+@media (min-width: 981px) {
+  .page {
+    padding: 22px 28px 30px;
+  }
+
+  .page-head {
+    margin-bottom: 15px;
+  }
+
+  .metric-grid {
+    gap: 10px;
+    margin-bottom: 14px;
+  }
+
+  .metric-card {
+    padding: 12px 15px;
+  }
+
+  .metric-value {
+    margin-top: 7px;
+    font-size: 25px;
+  }
+
+  .metric-detail {
+    font-size: 10px;
+  }
+
+  .queue-workspace {
+    min-height: clamp(390px, calc(100dvh - 300px), 690px);
+  }
+
+  .queue-panel .queue-list {
+    max-height: none;
+    overflow-y: auto;
+  }
+
+  .inline-conversation .conversation-main {
+    min-height: 390px;
+    height: clamp(390px, calc(100dvh - 300px), 690px);
+  }
+
+  .inline-conversation .conversation-side {
+    max-height: clamp(390px, calc(100dvh - 300px), 690px);
+  }
+
+  .conversation-top {
+    padding: 12px 16px;
+  }
+
+  .messages {
+    padding: 16px 19px;
+  }
+
+  .message {
+    margin-bottom: 10px;
+  }
+
+  .bubble {
+    padding: 9px 11px;
+    font-size: 12px;
+    line-height: 1.4;
+  }
+
+  .composer {
+    padding: 10px 13px 11px;
+  }
+
+  .conversation-side {
+    padding: 14px;
+  }
+}

@@ -5,6 +5,7 @@ import {
   AlertTriangle,
   BarChart3,
   Bell,
+  CalendarDays,
   ChevronLeft,
   ChevronRight,
   CircleHelp,
@@ -12,6 +13,7 @@ import {
   DollarSign,
   Inbox,
   LockKeyhole,
+  MapPin,
   LogIn,
   LogOut,
   Menu,
@@ -183,7 +185,8 @@ async function unsubscribeFromPush(token: string) {
   });
 }
 
-type ConvUser = { id: number; name: string; photo?: string };
+type ProfileDetails = { location?: string; bio?: string; age?: number; gallery?: string[]; details?: Record<string, string> };
+type ConvUser = { id: number; name: string; photo?: string; profile?: ProfileDetails };
 type ConvLock = { moderatorId: number; moderatorName: string; lockedAt: number; expiresAt: number };
 type Conversation = {
   key: string;
@@ -220,7 +223,7 @@ function photoUrl(photo?: string) {
   return `/api/uploads/${encodeURIComponent(value)}`;
 }
 
-function Avatar({ photo, name, size = 36 }: { photo?: string; name: string; size?: number }) {
+function Avatar({ photo, name, size = 36, shape = "circle" }: { photo?: string; name: string; size?: number; shape?: "circle" | "square" }) {
   const { token } = useSession();
   const [failed, setFailed] = useState(false);
   const [source, setSource] = useState("");
@@ -252,9 +255,9 @@ function Avatar({ photo, name, size = 36 }: { photo?: string; name: string; size
     };
   }, [photo, token]);
   if (source && !failed) {
-    return <img className="real-avatar" src={source} alt={name} style={style} onError={() => setFailed(true)} />;
+    return <img className={`real-avatar ${shape === "square" ? "avatar-square" : ""}`} src={source} alt={name} style={style} onError={() => setFailed(true)} />;
   }
-  return <div className="avatar" style={style}>{initials || "?"}</div>;
+  return <div className={`avatar ${shape === "square" ? "avatar-square" : ""}`} style={style}>{initials || "?"}</div>;
 }
 
 function Logo() {
@@ -502,24 +505,31 @@ function useModeratorData() {
 function QueuePage() {
   const { user } = useSession();
   const { conversations, stats, loading, reload } = useModeratorData();
-  const [, setLocation] = useLocation();
   const [filter, setFilter] = useState<"all" | "mine" | "available">("all");
   const [search, setSearch] = useState("");
+  const [selectedKey, setSelectedKey] = useState("");
   const [notice, setNotice] = useState("");
   const filtered = useMemo(() => conversations.filter((conversation) => {
     const matchesFilter = filter === "all" || (filter === "mine" ? conversation.lock?.moderatorId === user?.id : !conversation.lock);
     const haystack = `${conversation.fakeUser.name} ${conversation.realUser.name} ${conversation.lastMessage}`.toLowerCase();
     return matchesFilter && haystack.includes(search.toLowerCase());
   }), [conversations, filter, search, user?.id]);
+  useEffect(() => {
+    if (!filtered.some((conversation) => conversation.key === selectedKey)) setSelectedKey(filtered[0]?.key || "");
+  }, [filtered, selectedKey]);
   const unread = conversations.filter((conversation) => !conversation.lastSenderFake).length;
   const refresh = async () => { await reload(); setNotice("Queue refreshed"); window.setTimeout(() => setNotice(""), 2200); };
   return <Shell><div className="page">
     <div className="page-head"><div><div className="eyebrow">Operator queue / live</div><h1 className="page-title">Good morning, {user?.name?.split(" ")[0] || "operator"}.</h1><p className="page-subtitle">Work the live conversation queue and keep every reply moving.</p></div><div className="queue-head-status"><StatusPill type="active">Live data</StatusPill><span className="tiny-text mono">Auto-refresh 15s</span></div></div>
     <div className="metric-grid"><Metric label="Open conversations" value={String(stats.totalConversations)} detail={`${unread} waiting for a reply`} /><Metric label="Your sent replies" value={String(stats.messagesSent)} detail="Recorded by the live activity log" color="var(--teal)" /><Metric label="Active locks" value={String(stats.activeLocks)} detail="Locks expire after 10 minutes" color="var(--ink)" /><Metric label="Queue status" value={loading ? "…" : "Live"} detail="No demo records are shown" color="var(--teal)" /></div>
-     <section className="panel"><div className="panel-head"><div><div className="panel-title">Conversations</div><div className="panel-kicker" style={{ marginTop: 5 }}>Your assigned work and available conversations</div></div><button className="button ghost compact" onClick={refresh}><RefreshCw size={13} /> Refresh</button></div>
-      <div className="filters">{(["all", "mine", "available"] as const).map((item) => <button key={item} className={`filter-button ${filter === item ? "selected" : ""}`} onClick={() => setFilter(item)}>{item === "all" ? "All conversations" : item === "mine" ? "Locked by me" : "Available"}</button>)}<div className="search-wrap"><Search size={15} /><input className="search-field" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search names or messages" aria-label="Search conversations" /></div></div>
-      <div className="queue-list">{loading ? <div className="empty-state"><RefreshCw className="spin" size={25} /><strong>Loading live conversations</strong><span>Fetching the authenticated operator queue.</span></div> : filtered.length ? filtered.map((conversation, index) => <ConversationRow key={conversation.key} conversation={conversation} userId={user?.id || 0} onOpen={() => setLocation(`/conversation/${conversation.key}`)} style={{ animationDelay: `${index * 35}ms` }} />) : <div className="empty-state"><Inbox size={27} /><strong>No conversations match this view</strong><span>The live source returned no matching conversations.</span></div>}</div>
-    </section><Toast message={notice} />
+      <div className="queue-workspace">
+        <section className="panel queue-panel"><div className="panel-head"><div><div className="panel-title">Conversations</div><div className="panel-kicker" style={{ marginTop: 5 }}>Select a chat to open it beside the queue</div></div><button className="button ghost compact" onClick={refresh}><RefreshCw size={13} /> Refresh</button></div>
+         <div className="filters">{(["all", "mine", "available"] as const).map((item) => <button key={item} className={`filter-button ${filter === item ? "selected" : ""}`} onClick={() => setFilter(item)}>{item === "all" ? "All" : item === "mine" ? "Mine" : "Available"}</button>)}<div className="search-wrap"><Search size={15} /><input className="search-field" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search conversations" aria-label="Search conversations" /></div></div>
+         <div className="queue-list">{loading ? <div className="empty-state"><RefreshCw className="spin" size={25} /><strong>Loading live conversations</strong><span>Fetching the authenticated operator queue.</span></div> : filtered.length ? filtered.map((conversation, index) => <ConversationRow key={conversation.key} conversation={conversation} userId={user?.id || 0} selected={conversation.key === selectedKey} onOpen={() => setSelectedKey(conversation.key)} style={{ animationDelay: `${index * 35}ms` }} />) : <div className="empty-state"><Inbox size={27} /><strong>No conversations match this view</strong><span>The live source returned no matching conversations.</span></div>}</div>
+        </section>
+         <div className="queue-detail"><ConversationPage inline embeddedKey={selectedKey} /></div>
+      </div>
+      <Toast message={notice} />
   </div></Shell>;
 }
 
@@ -579,11 +589,11 @@ function EarningsPage() {
   </div></Shell>;
 }
 
-function ConversationRow({ conversation, userId, onOpen, style }: { conversation: Conversation; userId: number; onOpen: () => void; style?: CSSProperties }) {
+function ConversationRow({ conversation, userId, selected, onOpen, style }: { conversation: Conversation; userId: number; selected?: boolean; onOpen: () => void; style?: CSSProperties }) {
   const needsReply = !conversation.lastSenderFake;
   const mine = conversation.lock?.moderatorId === userId;
   const otherLock = conversation.lock && !mine;
-  return <button className={`queue-row live-row ${needsReply ? "needs-reply" : ""}`} onClick={onOpen} style={style}>
+  return <button className={`queue-row live-row ${needsReply ? "needs-reply" : ""} ${selected ? "selected" : ""}`} onClick={onOpen} style={style}>
     <div className="queue-person"><div className="avatar-stack"><Avatar photo={conversation.fakeUser.photo} name={conversation.fakeUser.name} size={36} /><Avatar photo={conversation.realUser.photo} name={conversation.realUser.name} size={22} /></div><div><strong>{conversation.fakeUser.name} <span className="arrow-muted">→</span> {conversation.realUser.name}</strong><small>{conversation.msgCount} messages · {timeAgo(conversation.lastTime)}</small></div></div>
      <div className="queue-snippet"><strong><span className={`priority-dot ${needsReply ? "high" : "normal"}`} />{conversation.lastMessage || "No text in the latest message"}</strong><small>{needsReply ? "Reply needed" : conversation.lastMsgRead ? "Follow-up available" : "Waiting for member"}</small></div>
     <div>{mine ? <StatusPill type="active">Locked by you</StatusPill> : otherLock ? <StatusPill type="pending">Locked</StatusPill> : <span className="button amber compact">Open</span>}</div><ChevronRight size={16} color="var(--ink-soft)" />
@@ -599,12 +609,27 @@ function MediaBubble({ message }: { message: Message }) {
   return null;
 }
 
-function ConversationPage() {
+function ProfileCard({ profileUser, tone }: { profileUser: ConvUser; tone: "member" | "managed" }) {
+  const profile = profileUser.profile || {};
+  const gallery = Array.from(new Set([profileUser.photo, ...(profile.gallery || [])].filter(Boolean))) as string[];
+  const hasDetails = Boolean(profile.location || profile.age || profile.bio || Object.keys(profile.details || {}).length);
+  return <article className={`profile-card ${tone}`}>
+    <div className="profile-card-head">
+      <Avatar photo={gallery[0]} name={profileUser.name} size={64} shape="square" />
+      <div><span className="profile-role">{tone === "member" ? "Member" : "Managed profile"}</span><strong>{profileUser.name}</strong>{profile.location && <span className="profile-location"><MapPin size={12} /> {profile.location}</span>}</div>
+    </div>
+    {gallery.length > 1 && <div className="profile-gallery" aria-label={`${profileUser.name} photo gallery`}>{gallery.slice(1, 5).map((photo, index) => <Avatar key={`${photo}-${index}`} photo={photo} name={profileUser.name} size={46} shape="square" />)}</div>}
+    {profile.bio && <p className="profile-bio">{profile.bio}</p>}
+    {hasDetails ? <div className="profile-facts">{profile.age && <span><CalendarDays size={12} /> {profile.age} years</span>}{Object.entries(profile.details || {}).slice(0, 3).map(([label, value]) => <span key={label}><strong>{label}</strong>{value}</span>)}</div> : <span className="profile-empty">Profile details were not supplied by the connected site.</span>}
+  </article>;
+}
+
+function ConversationPage({ inline = false, embeddedKey = "" }: { inline?: boolean; embeddedKey?: string } = {}) {
   const params = useParams<{ id: string }>();
   const { user, token } = useSession();
   const [, setLocation] = useLocation();
   const { conversations, reload } = useModeratorData();
-  const selectedFromQueue = conversations.find((conversation) => conversation.key === params.id);
+  const selectedFromQueue = conversations.find((conversation) => conversation.key === (embeddedKey || params.id));
   const [conversationSnapshot, setConversationSnapshot] = useState<Conversation | null>(null);
   useEffect(() => {
     if (selectedFromQueue) setConversationSnapshot(selectedFromQueue);
@@ -654,7 +679,10 @@ function ConversationPage() {
     return () => window.clearInterval(interval);
   }, [selected, lockedByMe, token]);
 
-  if (!selected) return <Shell><div className="page"><div className="empty-state panel"><AlertTriangle size={28} /><strong>Conversation not found</strong><span>This live queue item may have expired or been removed.</span><Link href="/" className="button primary" style={{ marginTop: 16 }}>Back to queue</Link></div></div></Shell>;
+  if (!selected) {
+    const empty = <div className="empty-state panel inline-empty"><MessageSquare size={28} /><strong>{inline ? "Select a conversation" : "Conversation not found"}</strong><span>{inline ? "Choose a chat from the queue to see the thread and profile context here." : "This live queue item may have expired or been removed."}</span>{!inline && <Link href="/" className="button primary" style={{ marginTop: 16 }}>Back to queue</Link>}</div>;
+    return inline ? empty : <Shell><div className="page">{empty}</div></Shell>;
+  }
 
   const notify = (value: string) => { setNotice(value); window.setTimeout(() => setNotice(""), 2400); };
   const toggleLock = async () => {
@@ -729,16 +757,17 @@ function ConversationPage() {
     if (!isAdmin && (event.ctrlKey || event.metaKey) && ["c", "v", "x"].includes(event.key.toLowerCase())) event.preventDefault();
     if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); send(); }
   };
-  return <Shell><div className="page">
-    <div className="page-head conversation-page-head"><button className="button ghost compact" onClick={() => setLocation("/")}><ChevronLeft size={13} /> Queue</button><div className="tiny-text mono">Live conversation · {selected.key}</div></div>
+  const content = <div className={inline ? "inline-conversation" : "page"}>
+     {!inline && <div className="page-head conversation-page-head"><button className="button ghost compact" onClick={() => setLocation("/")}><ChevronLeft size={13} /> Queue</button><div className="tiny-text mono">Live conversation · {selected.key}</div></div>}
     <div className="conversation-layout">
        <section className="panel conversation-main"><div className="conversation-top"><div className="conversation-identity"><div className="avatar-stack large"><Avatar photo={selected.fakeUser.photo} name={selected.fakeUser.name} size={44} /><Avatar photo={selected.realUser.photo} name={selected.realUser.name} size={26} /></div><div><h2>{selected.fakeUser.name} <span className="arrow-muted">→</span> {selected.realUser.name}</h2><small>Conversation context and message history</small></div></div><div className="conversation-actions">{selected.lock && <StatusPill type={lockedByMe ? "active" : "pending"}>{lockedByMe ? "Locked by you" : "Locked"}</StatusPill>}<button className={`button compact ${lockedByMe ? "ghost" : "amber"}`} onClick={toggleLock} disabled={locking || (selected.lock !== null && !lockedByMe)}>{lockedByMe ? <><UnlockKeyhole size={13} /> Release</> : <><LockKeyhole size={13} /> Lock to me</>}</button></div></div>
         <div className="messages">{loading ? <div className="empty-state"><RefreshCw className="spin" size={24} /><strong>Loading messages</strong></div> : messages.length ? messages.map((message, index) => { const byFake = message.senderType === "managed_profile" || message.u1 === selected.fakeUser.id; const sender = users[String(message.u1)] || (byFake ? selected.fakeUser : selected.realUser); return <div key={message.id} className={`message ${byFake ? "operator" : "member"}`}><Avatar photo={sender.photo} name={sender.name} size={27} /><div><div className="bubble">{message.mediaUrl && <MediaBubble message={message} />}{message.message && <p>{message.message}</p>}<div className="message-meta">{timeAgo(message.time)} {index === messages.length - 1 && <strong>{byFake ? "Waiting for member" : "Needs reply"}</strong>}</div></div></div></div>; }) : <div className="empty-state"><MessageSquare size={25} /><strong>No messages in this conversation</strong><span>The connected source returned an empty thread.</span></div>}</div>
         <div className="composer">{suggestions.length > 0 && <div className="canned-row">{suggestions.map((suggestion) => <button key={suggestion} className="canned" onClick={() => setDraft(suggestion)}>{suggestion}</button>)}</div>}{media && <div className="media-pending"><span>{media.type} attached</span><button className="icon-button" onClick={() => { URL.revokeObjectURL(media.preview); setMedia(null); }} aria-label="Remove attachment"><X size={14} /></button></div>}<div className="composer-row"><textarea value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={keyDown} onCopy={(event) => { if (!isAdmin) event.preventDefault(); }} onCut={(event) => { if (!isAdmin) event.preventDefault(); }} onPaste={(event) => { if (!isAdmin) event.preventDefault(); }} onDrop={(event) => { if (!isAdmin) event.preventDefault(); }} placeholder={lockedByMe ? "Write a thoughtful reply…" : "Lock this conversation before replying"} disabled={!lockedByMe || sending} aria-label="Reply message" /><div className="composer-tools"><input ref={inputRef} type="file" accept="image/*,video/*,audio/*" hidden onChange={handleFile} /><button className="icon-button" onClick={() => inputRef.current?.click()} disabled={!lockedByMe || sending} aria-label="Attach media"><Paperclip size={16} /></button><button className="button primary" onClick={send} disabled={!canSend || sending}><Send size={14} /> {sending ? "Sending…" : "Send"}</button></div></div><div className={`reply-counter ${!isAdmin && meaningful > 0 && meaningful < MIN_REPLY_CHARS ? "short" : ""}`}>{isAdmin ? "Administrator override enabled" : `${meaningful}/${MIN_REPLY_CHARS} non-space characters required`} · Enter to send, Shift+Enter for a new line</div></div>
       </section>
-       <aside className="panel conversation-side"><div className="side-section"><div className="side-title">Conversation details</div><div className="detail-line"><span>Latest activity</span><span>{timeAgo(selected.lastTime)}</span></div><div className="detail-line"><span>Messages</span><span>{selected.msgCount}</span></div><div className="detail-line"><span>Assignment</span><span>{lockedByMe ? "You" : selected.lock ? selected.lock.moderatorName : "Available"}</span></div></div><div className="side-section shared-notes"><div className="side-title">Shared operator notes</div><p className="tiny-text notes-help">Private to operators. Record what was discussed, promised, or already provided so the next operator can continue naturally.</p><textarea className="form-field notes-field" value={notes.text} maxLength={5000} onChange={(event) => setNotes((current) => ({ ...current, text: event.target.value }))} placeholder={lockedByMe ? "What did the user ask for? What was promised or already given?" : "Lock this conversation to view and update notes"} disabled={!lockedByMe || savingNotes} aria-label="Shared operator notes" /><div className="notes-actions"><span className="tiny-text">{notes.text.length}/5000</span><button className="button amber compact" onClick={saveNotes} disabled={!lockedByMe || savingNotes || notes.text === savedNotes}>{savingNotes ? "Saving…" : "Save notes"}</button></div>{notes.updatedAt && <span className="tiny-text notes-updated">Updated by {notes.updatedByName || "an operator"} · {new Date(notes.updatedAt).toLocaleString()}</span>}</div><div className="side-section"><div className="side-title">Reply quality</div><div className="notice"><ShieldCheck size={13} /> Keep replies warm, direct, and personal.</div></div><div className="side-section"><div className="side-title">Lock policy</div><div className="tiny-text"><Clock3 size={13} style={{ verticalAlign: "middle", marginRight: 5 }} /> Locks last 10 minutes and are renewed while this conversation is open.</div></div></aside>
+        <aside className="panel conversation-side"><div className="side-section profile-section"><div className="side-title">People in this chat</div><div className="profile-stack"><ProfileCard profileUser={users["-1"] || selected.fakeUser} tone="managed" /><ProfileCard profileUser={users["-2"] || selected.realUser} tone="member" /></div></div><div className="side-section"><div className="side-title">Conversation details</div><div className="detail-line"><span>Latest activity</span><span>{timeAgo(selected.lastTime)}</span></div><div className="detail-line"><span>Messages</span><span>{selected.msgCount}</span></div><div className="detail-line"><span>Assignment</span><span>{lockedByMe ? "You" : selected.lock ? selected.lock.moderatorName : "Available"}</span></div></div><div className="side-section shared-notes"><div className="side-title">Shared operator notes</div><p className="tiny-text notes-help">Private to operators. Record what was discussed, promised, or already provided so the next operator can continue naturally.</p><textarea className="form-field notes-field" value={notes.text} maxLength={5000} onChange={(event) => setNotes((current) => ({ ...current, text: event.target.value }))} placeholder={lockedByMe ? "What did the user ask for? What was promised or already given?" : "Lock this conversation to view and update notes"} disabled={!lockedByMe || savingNotes} aria-label="Shared operator notes" /><div className="notes-actions"><span className="tiny-text">{notes.text.length}/5000</span><button className="button amber compact" onClick={saveNotes} disabled={!lockedByMe || savingNotes || notes.text === savedNotes}>{savingNotes ? "Saving…" : "Save notes"}</button></div>{notes.updatedAt && <span className="tiny-text notes-updated">Updated by {notes.updatedByName || "an operator"} · {new Date(notes.updatedAt).toLocaleString()}</span>}</div><div className="side-section"><div className="side-title">Reply quality</div><div className="notice"><ShieldCheck size={13} /> Keep replies warm, direct, and personal.</div></div><div className="side-section"><div className="side-title">Lock policy</div><div className="tiny-text"><Clock3 size={13} style={{ verticalAlign: "middle", marginRight: 5 }} /> Locks last 10 minutes and are renewed while this conversation is open.</div></div></aside>
     </div><Toast message={notice} />
-  </div></Shell>;
+   </div>;
+  return inline ? content : <Shell>{content}</Shell>;
 }
 
 function ReportsPage() {
@@ -1178,12 +1207,16 @@ function HomePage() {
   return user?.role === "recruiter" ? <RecruiterPage /> : <QueuePage />;
 }
 
+function ConversationRoute() {
+  return <ConversationPage />;
+}
+
 function AuthenticatedRouter() {
   const { user, loading } = useSession();
   const [location] = useLocation();
   if (loading) return <div className="auth-loading"><RefreshCw className="spin" size={24} /><span>Checking secure session…</span></div>;
   if (!user) return <Switch><Route path="/login" component={LoginPage} /><Route path="/activate" component={ActivationPage} /><Route path="/apply" component={ApplyPage} /><Route path="/welcome" component={LandingPage} /><Route component={LandingPage} /></Switch>;
-  return <ErrorBoundary resetKey={location}><Switch><Route path="/" component={HomePage} /><Route path="/earnings" component={EarningsPage} /><Route path="/conversation/:id" component={ConversationPage} /><Route path="/reports" component={ReportsPage} /><Route path="/recruiter" component={RecruiterPage} /><Route path="/admin" component={AdminPage} /><Route path="/settings" component={SettingsPage} /><Route component={NotFound} /></Switch></ErrorBoundary>;
+  return <ErrorBoundary resetKey={location}><Switch><Route path="/" component={HomePage} /><Route path="/earnings" component={EarningsPage} /><Route path="/conversation/:id" component={ConversationRoute} /><Route path="/reports" component={ReportsPage} /><Route path="/recruiter" component={RecruiterPage} /><Route path="/admin" component={AdminPage} /><Route path="/settings" component={SettingsPage} /><Route component={NotFound} /></Switch></ErrorBoundary>;
 }
 
 function App() {

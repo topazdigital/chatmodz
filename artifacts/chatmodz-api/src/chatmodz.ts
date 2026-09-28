@@ -11,6 +11,16 @@ const MIN_REPLY_CHARS = 20
 const MAX_OPERATOR_NOTES = 5000
 const SIGNATURE_WINDOW_MS = 5 * 60 * 1000
 const MAX_PROFILE_PHOTO_BYTES = 5 * 1024 * 1024
+const MAX_PROFILE_GALLERY_ITEMS = 8
+const MAX_PROFILE_TEXT_LENGTH = 1000
+
+type ProfileDetails = {
+  location?: string
+  bio?: string
+  age?: number
+  gallery?: string[]
+  details?: Record<string, string>
+}
 
 type Operator = {
   id: number
@@ -126,6 +136,30 @@ async function ensurePerformanceIndexes() {
   }
 }
 
+async function ensureConversationColumns() {
+  const columns: Array<[string, string]> = [
+    ["operator_notes", "TEXT NULL"],
+    ["operator_notes_updated_at", "TIMESTAMP NULL"],
+    ["operator_notes_updated_by", "BIGINT UNSIGNED NULL"],
+    ["member_profile_json", "JSON NULL"],
+    ["managed_profile_profile_json", "JSON NULL"],
+  ]
+  for (const [columnName, definition] of columns) {
+    try {
+      const existing = await query<any>(
+        "SELECT 1 AS present FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'conversations' AND column_name = ? LIMIT 1",
+        [columnName],
+      )
+      if (!existing.length) {
+        await query(`ALTER TABLE conversations ADD COLUMN \`${columnName}\` ${definition}`)
+        console.log(`[Chatmodz] Added conversation column ${columnName}`)
+      }
+    } catch (error) {
+      console.error(`[Chatmodz] Could not ensure conversation column ${columnName}:`, error instanceof Error ? error.message : error)
+    }
+  }
+}
+
 export async function initializeChatmodz() {
   if (isDemoMode()) {
     console.log("Chatmodz development demo mode enabled; MySQL persistence is disabled")
@@ -135,10 +169,56 @@ export async function initializeChatmodz() {
     if (process.env.CHATMODZ_ADMIN_EMAIL && process.env.CHATMODZ_ADMIN_PASSWORD) {
       await ensureBootstrapAdmin()
     }
+    await ensureConversationColumns()
     void ensurePerformanceIndexes()
   } catch (error) {
     console.error("Chatmodz startup initialization failed:", error instanceof Error ? error.message : error)
   }
+}
+
+function profileDetails(value: unknown): ProfileDetails | undefined {
+  let candidate = value
+  if (typeof candidate === "string") {
+    try {
+      candidate = JSON.parse(candidate)
+    } catch {
+      return undefined
+    }
+  }
+  if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) return undefined
+  const record = candidate as Record<string, unknown>
+  const result: ProfileDetails = {}
+  if (typeof record.location === "string" && record.location.trim()) result.location = record.location.trim().slice(0, MAX_PROFILE_TEXT_LENGTH)
+  if (typeof record.bio === "string" && record.bio.trim()) result.bio = record.bio.trim().slice(0, MAX_PROFILE_TEXT_LENGTH)
+  const age = Number(record.age)
+  if (Number.isInteger(age) && age > 0 && age < 130) result.age = age
+  if (Array.isArray(record.gallery)) {
+    const gallery = record.gallery
+      .filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+      .map((item) => item.trim().slice(0, 500))
+      .slice(0, MAX_PROFILE_GALLERY_ITEMS)
+    if (gallery.length) result.gallery = gallery
+  }
+  if (record.details && typeof record.details === "object" && !Array.isArray(record.details)) {
+    const details = Object.entries(record.details as Record<string, unknown>).reduce<Record<string, string>>((accumulator, [key, item]) => {
+      if (typeof item === "string" && item.trim()) accumulator[key.slice(0, 80)] = item.trim().slice(0, 180)
+      return accumulator
+    }, {})
+    if (Object.keys(details).length) result.details = details
+  }
+  return Object.keys(result).length ? result : undefined
+}
+
+function profileFromPayload(payload: Record<string, any>, prefix: "member" | "managedProfile") {
+  const candidate = payload[`${prefix}Profile`]
+  const fallback = {
+    location: payload[`${prefix}Location`],
+    bio: payload[`${prefix}Bio`],
+    age: payload[`${prefix}Age`],
+    gallery: payload[`${prefix}Gallery`],
+    details: payload[`${prefix}Details`],
+  }
+  return profileDetails(candidate || fallback)
 }
 
 async function query<T = any>(sql: string, values: unknown[] = []): Promise<T[]> {
@@ -635,8 +715,8 @@ router.get("/conversations", requireChatmodzAuth, async (req, res) => {
     `, [req.chatmodzOperator!.id])
     const conversations = rows.map((row) => ({
       key: publicKey(Number(row.id)),
-      fakeUser: { id: -1, name: row.managed_profile_alias, photo: profilePhotoPath(row.managed_profile_photo_url, row.site_endpoint_base_url) },
-      realUser: { id: -2, name: row.member_alias, photo: profilePhotoPath(row.member_photo_url, row.site_endpoint_base_url) },
+      fakeUser: { id: -1, name: row.managed_profile_alias, photo: profilePhotoPath(row.managed_profile_photo_url, row.site_endpoint_base_url), profile: profileDetails(row.managed_profile_profile_json) },
+      realUser: { id: -2, name: row.member_alias, photo: profilePhotoPath(row.member_photo_url, row.site_endpoint_base_url), profile: profileDetails(row.member_profile_json) },
       lastMessage: row.last_message || "",
       lastTime: Math.floor(new Date(row.last_message_at).getTime() / 1000),
       msgCount: Number(row.msg_count || 0),
@@ -686,8 +766,8 @@ router.get("/conversations/:key/messages", requireChatmodzAuth, async (req, res)
         mediaType: row.media_type || "",
       })),
       users: {
-        "-1": { id: -1, name: conversation.managed_profile_alias, photo: profilePhotoPath(conversation.managed_profile_photo_url, conversation.site_endpoint_base_url) },
-        "-2": { id: -2, name: conversation.member_alias, photo: profilePhotoPath(conversation.member_photo_url, conversation.site_endpoint_base_url) },
+        "-1": { id: -1, name: conversation.managed_profile_alias, photo: profilePhotoPath(conversation.managed_profile_photo_url, conversation.site_endpoint_base_url), profile: profileDetails(conversation.managed_profile_profile_json) },
+        "-2": { id: -2, name: conversation.member_alias, photo: profilePhotoPath(conversation.member_photo_url, conversation.site_endpoint_base_url), profile: profileDetails(conversation.member_profile_json) },
       },
       notes: {
         text: conversation.operator_notes || "",
@@ -899,7 +979,9 @@ router.post("/integrations/:siteKey/profiles", async (req, res) => {
   const conversationId = typeof payload.conversationId === "string" ? payload.conversationId.trim() : ""
   const memberPhotoUrl = typeof payload.memberPhotoUrl === "string" ? payload.memberPhotoUrl.trim() : ""
   const managedProfilePhotoUrl = typeof payload.managedProfilePhotoUrl === "string" ? payload.managedProfilePhotoUrl.trim() : ""
-  if (!conversationId || (!memberPhotoUrl && !managedProfilePhotoUrl)) return res.status(400).json({ error: "A conversation and at least one profile photo are required" })
+  const memberProfile = profileFromPayload(payload, "member")
+  const managedProfile = profileFromPayload(payload, "managedProfile")
+  if (!conversationId || (!memberPhotoUrl && !managedProfilePhotoUrl && !memberProfile && !managedProfile)) return res.status(400).json({ error: "A conversation and at least one profile detail are required" })
   try {
     const sites = await query<any>("SELECT * FROM sites WHERE internal_name = ? AND status = 'active' LIMIT 1", [siteKey])
     const site = sites[0]
@@ -934,8 +1016,8 @@ router.post("/integrations/:siteKey/profiles", async (req, res) => {
     }
     const rowPlaceholders = matched.map(() => "?").join(", ")
     const [result] = await database().execute(
-      `UPDATE conversations SET member_photo_url = COALESCE(NULLIF(?, ''), member_photo_url), managed_profile_photo_url = COALESCE(NULLIF(?, ''), managed_profile_photo_url) WHERE id IN (${rowPlaceholders})`,
-      [memberPhotoUrl || null, managedProfilePhotoUrl || null, ...matched.map((row) => Number(row.id))],
+      `UPDATE conversations SET member_photo_url = COALESCE(NULLIF(?, ''), member_photo_url), managed_profile_photo_url = COALESCE(NULLIF(?, ''), managed_profile_photo_url), member_profile_json = COALESCE(?, member_profile_json), managed_profile_profile_json = COALESCE(?, managed_profile_profile_json) WHERE id IN (${rowPlaceholders})`,
+      [memberPhotoUrl || null, managedProfilePhotoUrl || null, memberProfile ? JSON.stringify(memberProfile) : null, managedProfile ? JSON.stringify(managedProfile) : null, ...matched.map((row) => Number(row.id))],
     ) as any
     res.status(202).json({ accepted: true, matched: matched.length, updated: Number(result?.affectedRows || 0) > 0 })
   } catch (error) {
@@ -948,6 +1030,8 @@ router.post("/integrations/:siteKey/messages", async (req, res) => {
   const siteKey = String(req.params.siteKey || "")
   const payload = req.body || {}
   const senderType = payload.sender === "managed_profile" ? "managed_profile" : payload.sender === "member" ? "member" : ""
+  const memberProfile = profileFromPayload(payload, "member")
+  const managedProfile = profileFromPayload(payload, "managedProfile")
   if (!payload.eventId || !payload.conversationId || !payload.messageId || !payload.body || !senderType) return res.status(400).json({ error: "Invalid message event" })
   try {
     const sites = await query<any>("SELECT * FROM sites WHERE internal_name = ? AND status = 'active' LIMIT 1", [siteKey])
@@ -959,10 +1043,10 @@ router.post("/integrations/:siteKey/messages", async (req, res) => {
       const conversations = await connection.execute("SELECT id FROM conversations WHERE site_id = ? AND external_conversation_id = ? LIMIT 1", [site.id, payload.conversationId]) as any
       let conversationId = Number(conversations[0][0]?.id || 0)
       if (!conversationId) {
-        const created: any = await connection.execute("INSERT INTO conversations (site_id, external_conversation_id, member_alias, managed_profile_alias, member_photo_url, managed_profile_photo_url, last_message_at) VALUES (?, ?, ?, ?, ?, ?, ?)", [site.id, payload.conversationId, payload.memberAlias || "Member", payload.managedProfileAlias || "Managed profile", payload.memberPhotoUrl || null, payload.managedProfilePhotoUrl || null, new Date(payload.sentAt || Date.now())])
+        const created: any = await connection.execute("INSERT INTO conversations (site_id, external_conversation_id, member_alias, managed_profile_alias, member_photo_url, managed_profile_photo_url, member_profile_json, managed_profile_profile_json, last_message_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", [site.id, payload.conversationId, payload.memberAlias || "Member", payload.managedProfileAlias || "Managed profile", payload.memberPhotoUrl || null, payload.managedProfilePhotoUrl || null, memberProfile ? JSON.stringify(memberProfile) : null, managedProfile ? JSON.stringify(managedProfile) : null, new Date(payload.sentAt || Date.now())])
         conversationId = Number(created[0].insertId)
       } else {
-        await connection.execute("UPDATE conversations SET member_alias = ?, managed_profile_alias = ?, member_photo_url = COALESCE(?, member_photo_url), managed_profile_photo_url = COALESCE(?, managed_profile_photo_url), last_message_at = ? WHERE id = ?", [payload.memberAlias || "Member", payload.managedProfileAlias || "Managed profile", payload.memberPhotoUrl || null, payload.managedProfilePhotoUrl || null, new Date(payload.sentAt || Date.now()), conversationId])
+        await connection.execute("UPDATE conversations SET member_alias = ?, managed_profile_alias = ?, member_photo_url = COALESCE(?, member_photo_url), managed_profile_photo_url = COALESCE(?, managed_profile_photo_url), member_profile_json = COALESCE(?, member_profile_json), managed_profile_profile_json = COALESCE(?, managed_profile_profile_json), last_message_at = ? WHERE id = ?", [payload.memberAlias || "Member", payload.managedProfileAlias || "Managed profile", payload.memberPhotoUrl || null, payload.managedProfilePhotoUrl || null, memberProfile ? JSON.stringify(memberProfile) : null, managedProfile ? JSON.stringify(managedProfile) : null, new Date(payload.sentAt || Date.now()), conversationId])
       }
       await connection.execute("INSERT INTO messages (conversation_id, external_message_id, sender_type, body, delivery_status, sent_at) VALUES (?, ?, ?, ?, 'received', ?)", [conversationId, payload.messageId, senderType, payload.body, new Date(payload.sentAt || Date.now())])
       await connection.execute("INSERT INTO integration_deliveries (site_id, direction, external_event_id, conversation_id, status, attempt_count, payload_json) VALUES (?, 'incoming', ?, ?, 'processed', 1, ?)", [site.id, payload.eventId, conversationId, JSON.stringify(payload)])

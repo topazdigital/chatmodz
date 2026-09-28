@@ -25,6 +25,19 @@ when the connected site supplies either a Chatmodz-proxied media path or an
 HTTPS photo URL, a protocol-relative URL, or a path relative to the connected
 site's endpoint. Unsupported or malformed values are ignored.
 
+The queue opens conversations inline: operators keep the queue list on the left
+while the selected thread, participant context, and shared notes stay visible
+on the right. Site adapters may also send optional `memberProfile` and
+`managedProfile` objects with location, age, bio, gallery, and small detail-map
+values. These are stored as optional conversation JSON and omitted gracefully
+when a source does not provide them.
+
+On startup the API checks for the conversation note and profile columns and
+adds any missing optional columns to an existing Chatmodz database. This keeps
+the shared notes save flow compatible with databases created before profile
+context was added. The canonical schema remains
+`artifacts/chatmodz/database/schema.mysql.sql`.
+
 ## VPS / DirectAdmin deployment
 
 The browser client is a static Vite build and the API is a separate Node

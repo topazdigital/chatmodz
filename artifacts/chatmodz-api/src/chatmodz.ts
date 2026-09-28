@@ -904,11 +904,11 @@ router.post("/integrations/:siteKey/profiles", async (req, res) => {
     const sites = await query<any>("SELECT * FROM sites WHERE internal_name = ? AND status = 'active' LIMIT 1", [siteKey])
     const site = sites[0]
     if (!site || !signedRequestIsValid(req, secretFor(site))) return res.status(401).json({ error: "Invalid integration signature" })
-    await query(
+    const [result] = await database().execute(
       "UPDATE conversations SET member_photo_url = COALESCE(NULLIF(?, ''), member_photo_url), managed_profile_photo_url = COALESCE(NULLIF(?, ''), managed_profile_photo_url) WHERE site_id = ? AND external_conversation_id = ?",
       [memberPhotoUrl || null, managedProfilePhotoUrl || null, site.id, conversationId],
-    )
-    res.status(202).json({ accepted: true })
+    ) as any
+    res.status(202).json({ accepted: true, updated: Number(result?.affectedRows || 0) > 0 })
   } catch (error) {
     if (failConfiguration(res, error)) return
     res.status(500).json({ error: "Could not update profile photos" })

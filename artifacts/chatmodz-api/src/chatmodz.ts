@@ -904,11 +904,40 @@ router.post("/integrations/:siteKey/profiles", async (req, res) => {
     const sites = await query<any>("SELECT * FROM sites WHERE internal_name = ? AND status = 'active' LIMIT 1", [siteKey])
     const site = sites[0]
     if (!site || !signedRequestIsValid(req, secretFor(site))) return res.status(401).json({ error: "Invalid integration signature" })
+    const memberId = Number(payload.memberId)
+    const managedProfileId = Number(payload.managedProfileId)
+    const conversationIds = [...new Set([
+      conversationId,
+      Number.isSafeInteger(memberId) && Number.isSafeInteger(managedProfileId) && memberId > 0 && managedProfileId > 0
+        ? [
+            "rdn-" + memberId + "-" + managedProfileId,
+            "rdn-" + managedProfileId + "-" + memberId,
+            "rdn-" + Math.min(memberId, managedProfileId) + "-" + Math.max(memberId, managedProfileId),
+          ]
+        : [],
+    ].flat())]
+    const idPlaceholders = conversationIds.map(() => "?").join(", ")
+    let matched = await query<any>(
+      `SELECT id FROM conversations WHERE site_id = ? AND external_conversation_id IN (${idPlaceholders})`,
+      [site.id, ...conversationIds],
+    )
+    if (matched.length === 0 && typeof payload.memberAlias === "string" && typeof payload.managedProfileAlias === "string") {
+      const aliasMatches = await query<any>(
+        "SELECT id FROM conversations WHERE site_id = ? AND member_alias = ? AND managed_profile_alias = ? LIMIT 2",
+        [site.id, payload.memberAlias.trim(), payload.managedProfileAlias.trim()],
+      )
+      if (aliasMatches.length === 1) matched = aliasMatches
+    }
+    if (matched.length === 0) {
+      console.warn("[Chatmodz] Profile sync found no matching conversation", { siteKey, conversationId, memberId, managedProfileId })
+      return res.status(202).json({ accepted: true, matched: 0, updated: false })
+    }
+    const rowPlaceholders = matched.map(() => "?").join(", ")
     const [result] = await database().execute(
-      "UPDATE conversations SET member_photo_url = COALESCE(NULLIF(?, ''), member_photo_url), managed_profile_photo_url = COALESCE(NULLIF(?, ''), managed_profile_photo_url) WHERE site_id = ? AND external_conversation_id = ?",
-      [memberPhotoUrl || null, managedProfilePhotoUrl || null, site.id, conversationId],
+      `UPDATE conversations SET member_photo_url = COALESCE(NULLIF(?, ''), member_photo_url), managed_profile_photo_url = COALESCE(NULLIF(?, ''), managed_profile_photo_url) WHERE id IN (${rowPlaceholders})`,
+      [memberPhotoUrl || null, managedProfilePhotoUrl || null, ...matched.map((row) => Number(row.id))],
     ) as any
-    res.status(202).json({ accepted: true, updated: Number(result?.affectedRows || 0) > 0 })
+    res.status(202).json({ accepted: true, matched: matched.length, updated: Number(result?.affectedRows || 0) > 0 })
   } catch (error) {
     if (failConfiguration(res, error)) return
     res.status(500).json({ error: "Could not update profile photos" })

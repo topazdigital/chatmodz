@@ -676,7 +676,7 @@ function ConversationPage({ inline = false, embeddedKey = "" }: { inline?: boole
       if (messagesRef.current) messagesRef.current.scrollTop = messagesRef.current.scrollHeight;
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [conversationKey, loading]);
+  }, [conversationKey, loading, messages.length]);
   useEffect(() => {
     if (!selected || !token) return;
     setSuggestions([]);

@@ -51,6 +51,7 @@ const demoLevels = [
 ]
 const demoEarnings: any[] = []
 const demoOperatorLevels = new Map<number, number>([[2, 1]])
+const demoAccounts = new Map<number, Operator>()
 const demoRecruiterOperators: any[] = [
   { id: 2, public_id: "demo-operator", full_name: "Demo Operator", email: "operator@chatmodz.test", role: "operator", status: "active", recruiter_id: 3, recruiter_name: "Demo Recruiter", last_active_at: new Date().toISOString(), created_at: new Date().toISOString(), activity_count: 12, replies: 8 },
 ]
@@ -85,6 +86,20 @@ function demoOperator(role: "admin" | "recruiter" | "operator" = "admin"): Opera
     role,
     status: "active",
   }
+}
+
+function getDemoAccounts() {
+  if (!demoAccounts.size) {
+    for (const role of ["admin", "recruiter", "operator"] as const) {
+      const operator = demoOperator(role)
+      demoAccounts.set(operator.id, operator)
+    }
+  }
+  return [...demoAccounts.values()]
+}
+
+function findDemoAccount(identifier: string) {
+  return getDemoAccounts().find((operator) => operator.email === identifier)
 }
 
 function timingSafeEqualText(left: string, right: string) {
@@ -453,7 +468,8 @@ async function requireChatmodzAuth(req: Request, res: Response, next: NextFuncti
     if (!header.startsWith("Bearer ")) return res.status(401).json({ error: "Unauthorized" })
     const payload = jwt.verify(header.slice(7), jwtSecret(), { issuer: "chatmodz" }) as jwt.JwtPayload
     const operator = isDemoMode()
-      ? demoOperator(payload.role === "operator" ? "operator" : payload.role === "recruiter" ? "recruiter" : "admin")
+      ? getDemoAccounts().find((item) => item.id === Number(payload.operatorId))
+        || demoOperator(payload.role === "operator" ? "operator" : payload.role === "recruiter" ? "recruiter" : "admin")
       : await loadOperator(Number(payload.operatorId))
     if (!operator || operator.status !== "active") return res.status(401).json({ error: "Session is no longer active" })
     req.chatmodzOperator = operator
@@ -634,25 +650,17 @@ router.post("/auth/login", async (req, res) => {
   if (isDemoMode()) {
     const configuredEmail = String(process.env.CHATMODZ_ADMIN_EMAIL || "").trim().toLowerCase()
     const configuredPassword = String(process.env.CHATMODZ_ADMIN_PASSWORD || "")
-    const operatorEmail = String(process.env.CHATMODZ_DEMO_OPERATOR_EMAIL || "operator@chatmodz.test").trim().toLowerCase()
     if (!configuredPassword || !timingSafeEqualText(password, configuredPassword)) {
       return res.status(401).json({ error: "Invalid demo credentials" })
     }
-    const recruiterEmail = String(process.env.CHATMODZ_DEMO_RECRUITER_EMAIL || "recruiter@chatmodz.test").trim().toLowerCase()
-    const operator = identifier === configuredEmail
-      ? demoOperator("admin")
-      : identifier === recruiterEmail
-        ? demoOperator("recruiter")
-        : identifier === operatorEmail
-          ? demoOperator("operator")
-          : null
+    const operator = findDemoAccount(identifier)
     if (!operator) return res.status(401).json({ error: "Invalid demo credentials" })
     return res.json({ token: tokenFor(operator), user: publicOperator(operator), demo: true })
   }
   try {
     const rows = await query<any>("SELECT * FROM operators WHERE email = ? LIMIT 1", [identifier])
     const operator = rows[0]
-    if (!operator || !(await bcrypt.compare(password, operator.password_hash))) return res.status(401).json({ error: "Invalid credentials" })
+    if (!operator?.password_hash || !(await bcrypt.compare(password, operator.password_hash))) return res.status(401).json({ error: "Invalid credentials" })
     if (operator.status !== "active") return res.status(403).json({ error: "This operator account is not active" })
     const safe = publicOperator(operator)
     void recordActivity(operator.id, "login")
@@ -1179,11 +1187,14 @@ router.post("/admin/applications/:id/reject", requireChatmodzAuth, requireChatmo
 })
 
 router.get("/admin/operators", requireChatmodzAuth, requireChatmodzAdmin, async (_req, res) => {
-  if (isDemoMode()) return res.json({ operators: [
-    { id: 1, public_id: "demo-admin", full_name: demoOperator().full_name, email: demoOperator().email, role: "admin", status: "active", last_active_at: new Date().toISOString(), created_at: new Date().toISOString() },
-    { id: 3, public_id: "demo-recruiter", full_name: demoOperator("recruiter").full_name, email: demoOperator("recruiter").email, role: "recruiter", status: "active", last_active_at: new Date().toISOString(), created_at: new Date().toISOString() },
-    { id: 2, public_id: "demo-operator", full_name: demoOperator("operator").full_name, email: demoOperator("operator").email, role: "operator", status: "active", last_active_at: new Date().toISOString(), created_at: new Date().toISOString() },
-  ], demo: true })
+  if (isDemoMode()) return res.json({
+    operators: getDemoAccounts().map((operator) => ({
+      ...operator,
+      last_active_at: new Date().toISOString(),
+      created_at: new Date().toISOString(),
+    })),
+    demo: true,
+  })
   try { res.json({ operators: await query("SELECT id, public_id, full_name, email, role, status, last_active_at, created_at FROM operators ORDER BY created_at DESC") }) }
   catch (error) { if (!failConfiguration(res, error)) res.status(500).json({ error: "Operators unavailable" }) }
 })
@@ -1201,7 +1212,37 @@ router.post("/admin/operators/:id/role", requireChatmodzAuth, requireChatmodzAdm
   if (!operatorId || !["operator", "recruiter"].includes(role)) return res.status(400).json({ error: "Choose operator or recruiter" })
   if (operatorId === req.chatmodzOperator!.id) return res.status(400).json({ error: "Your administrator role cannot be changed here" })
   if (isDemoMode()) {
-    if (![2, 3].includes(operatorId)) return res.status(404).json({ error: "Operator not found" })
+    const target = getDemoAccounts().find((operator) => operator.id === operatorId)
+    if (!target || target.role === "admin") return res.status(404).json({ error: "Operator not found" })
+    target.role = role as Operator["role"]
+    const recruiterRecord = demoRecruiterOperators.find((operator) => Number(operator.id) === operatorId)
+    if (role === "recruiter") {
+      for (const operator of demoRecruiterOperators) {
+        if (Number(operator.recruiter_id) === operatorId) {
+          operator.recruiter_id = null
+          operator.recruiter_name = null
+        }
+      }
+      if (recruiterRecord) demoRecruiterOperators.splice(demoRecruiterOperators.indexOf(recruiterRecord), 1)
+    } else if (!recruiterRecord) {
+      demoRecruiterOperators.unshift({
+        id: target.id,
+        public_id: target.public_id,
+        full_name: target.full_name,
+        email: target.email,
+        role: "operator",
+        status: target.status,
+        recruiter_id: 3,
+        recruiter_name: "Demo Recruiter",
+        last_active_at: new Date().toISOString(),
+        created_at: new Date().toISOString(),
+        activity_count: 0,
+        replies: 0,
+      })
+    } else {
+      recruiterRecord.role = "operator"
+      recruiterRecord.status = target.status
+    }
     return res.json({ updated: true, demo: true })
   }
   try {
@@ -1219,6 +1260,7 @@ router.post("/admin/operators/:id/role", requireChatmodzAuth, requireChatmodzAdm
 })
 
 function recruiterOverviewDemo(viewer: Operator) {
+  const recruiters = getDemoAccounts().filter((operator) => operator.role === "recruiter")
   const operators = viewer.role === "admin"
     ? demoRecruiterOperators
     : demoRecruiterOperators.filter((operator) => Number(operator.recruiter_id) === viewer.id)
@@ -1226,12 +1268,18 @@ function recruiterOverviewDemo(viewer: Operator) {
     ? demoRecruiterActivity
     : demoRecruiterActivity.filter((activity) => Number(activity.recruiter_id) === viewer.id || Number(activity.operator_id) === viewer.id)
   return {
-    recruiters: [
-      { id: 3, full_name: "Demo Recruiter", email: "recruiter@chatmodz.test", status: "active", last_active_at: new Date().toISOString(), recruited_count: operators.length, activity_count: activities.filter((activity) => Number(activity.operator_id) === 3).length },
-    ],
+    recruiters: recruiters.map((recruiter) => ({
+      id: recruiter.id,
+      full_name: recruiter.full_name,
+      email: recruiter.email,
+      status: recruiter.status,
+      last_active_at: new Date().toISOString(),
+      recruited_count: demoRecruiterOperators.filter((operator) => Number(operator.recruiter_id) === recruiter.id).length,
+      activity_count: activities.filter((activity) => Number(activity.operator_id) === recruiter.id).length,
+    })),
     operators,
     activities,
-    summary: { recruiters: viewer.role === "admin" ? 1 : 0, operators: operators.length, active: operators.filter((operator) => operator.status === "active").length, activities: activities.length },
+    summary: { recruiters: viewer.role === "admin" ? recruiters.length : 0, operators: operators.length, active: operators.filter((operator) => operator.status === "active").length, activities: activities.length },
     demo: true,
   }
 }

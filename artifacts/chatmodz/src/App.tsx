@@ -341,7 +341,7 @@ function LoginPage() {
       <div className="eyebrow">Secure operator access</div>
       <h1>Welcome back.</h1>
       <p>Sign in with the email you used to apply and the password you created during activation.</p>
-      {import.meta.env.DEV && <div className="notice" style={{ marginBottom: 18 }}><ShieldCheck size={13} /> Replit demo: use the configured administrator credentials, or sign in as <strong>operator@chatmodz.test</strong> with the same development password to preview the queue-only operator role.</div>}
+      {import.meta.env.DEV && <div className="notice" style={{ marginBottom: 18 }}><ShieldCheck size={13} /> Replit demo: administrator, recruiter, and operator accounts use their configured demo emails with the same development password.</div>}
       <form onSubmit={submit} className="auth-form">
         <label htmlFor="identifier">Operator email</label>
         <input id="identifier" className="form-field" value={identifier} onChange={(event) => setIdentifier(event.target.value)} autoComplete="username" required />

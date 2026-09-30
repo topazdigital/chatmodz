@@ -1038,9 +1038,15 @@ router.post("/integrations/:siteKey/messages", async (req, res) => {
   const siteKey = String(req.params.siteKey || "")
   const payload = req.body || {}
   const senderType = payload.sender === "managed_profile" ? "managed_profile" : payload.sender === "member" ? "member" : ""
+  const body = typeof payload.body === "string" ? payload.body.trim() : ""
+  const mediaUrl = typeof payload.mediaUrl === "string" ? payload.mediaUrl.trim() : ""
+  const requestedMediaType = typeof payload.mediaType === "string" ? payload.mediaType.trim().toLowerCase() : ""
+  const mediaType = ["image", "video", "audio"].includes(requestedMediaType) ? requestedMediaType : ""
   const memberProfile = profileFromPayload(payload, "member")
   const managedProfile = profileFromPayload(payload, "managedProfile")
-  if (!payload.eventId || !payload.conversationId || !payload.messageId || !payload.body || !senderType) return res.status(400).json({ error: "Invalid message event" })
+  if (!payload.eventId || !payload.conversationId || !payload.messageId || (!body && !mediaUrl) || !senderType || (mediaUrl && !mediaType)) {
+    return res.status(400).json({ error: "Invalid message event" })
+  }
   try {
     const sites = await query<any>("SELECT * FROM sites WHERE internal_name = ? AND status = 'active' LIMIT 1", [siteKey])
     const site = sites[0]
@@ -1054,9 +1060,9 @@ router.post("/integrations/:siteKey/messages", async (req, res) => {
         const created: any = await connection.execute("INSERT INTO conversations (site_id, external_conversation_id, member_alias, managed_profile_alias, member_photo_url, managed_profile_photo_url, member_profile_json, managed_profile_profile_json, last_message_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", [site.id, payload.conversationId, payload.memberAlias || "Member", payload.managedProfileAlias || "Managed profile", payload.memberPhotoUrl || null, payload.managedProfilePhotoUrl || null, memberProfile ? JSON.stringify(memberProfile) : null, managedProfile ? JSON.stringify(managedProfile) : null, new Date(payload.sentAt || Date.now())])
         conversationId = Number(created[0].insertId)
       } else {
-        await connection.execute("UPDATE conversations SET member_alias = ?, managed_profile_alias = ?, member_photo_url = COALESCE(?, member_photo_url), managed_profile_photo_url = COALESCE(?, managed_profile_photo_url), member_profile_json = COALESCE(?, member_profile_json), managed_profile_profile_json = COALESCE(?, managed_profile_profile_json), last_message_at = ? WHERE id = ?", [payload.memberAlias || "Member", payload.managedProfileAlias || "Managed profile", payload.memberPhotoUrl || null, payload.managedProfilePhotoUrl || null, memberProfile ? JSON.stringify(memberProfile) : null, managedProfile ? JSON.stringify(managedProfile) : null, new Date(payload.sentAt || Date.now()), conversationId])
+        await connection.execute("UPDATE conversations SET member_alias = ?, managed_profile_alias = ?, member_photo_url = COALESCE(?, member_photo_url), managed_profile_photo_url = COALESCE(?, managed_profile_photo_url), member_profile_json = COALESCE(?, member_profile_json), managed_profile_profile_json = COALESCE(?, managed_profile_profile_json), last_message_at = GREATEST(last_message_at, ?) WHERE id = ?", [payload.memberAlias || "Member", payload.managedProfileAlias || "Managed profile", payload.memberPhotoUrl || null, payload.managedProfilePhotoUrl || null, memberProfile ? JSON.stringify(memberProfile) : null, managedProfile ? JSON.stringify(managedProfile) : null, new Date(payload.sentAt || Date.now()), conversationId])
       }
-      await connection.execute("INSERT INTO messages (conversation_id, external_message_id, sender_type, body, delivery_status, sent_at) VALUES (?, ?, ?, ?, 'received', ?)", [conversationId, payload.messageId, senderType, payload.body, new Date(payload.sentAt || Date.now())])
+      await connection.execute("INSERT INTO messages (conversation_id, external_message_id, sender_type, body, media_proxy_url, media_type, delivery_status, sent_at) VALUES (?, ?, ?, ?, ?, ?, 'received', ?)", [conversationId, payload.messageId, senderType, body, mediaUrl || null, mediaType || null, new Date(payload.sentAt || Date.now())])
       await connection.execute("INSERT INTO integration_deliveries (site_id, direction, external_event_id, conversation_id, status, attempt_count, payload_json) VALUES (?, 'incoming', ?, ?, 'processed', 1, ?)", [site.id, payload.eventId, conversationId, JSON.stringify(payload)])
     })
     if (senderType === "member") {

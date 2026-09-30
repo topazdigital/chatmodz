@@ -52,6 +52,11 @@ Chatmodz-proxied media paths. Relative values are resolved against the
 connected site's configured endpoint before being returned to operators.
 HTTP profile photos are loaded through Chatmodz's authenticated photo proxy so
 they continue to work when the operator workspace is served over HTTPS.
+The source adapter must send every message in both directions: use `member` when
+the real member sent it and `managed_profile` when the managed profile sent it.
+`body` may be empty only when a supported `mediaUrl` and `mediaType` (`image`,
+`video`, or `audio`) are present. A message ID must remain stable when retries
+or history synchronization resend that message.
 Empty, unsupported, and malformed values are ignored.
 Optional `memberProfile` and `managedProfile` objects can provide `location`,
 `age`, `bio`, `gallery`, and a small `details` map. The operator workspace
@@ -61,7 +66,9 @@ does not provide them.
 The `sender` value may also be `managed_profile` when the connected site
 reports a reply sent directly from its own interface. These messages are
 stored in the same conversation history but do not appear in the operator
-queue until a newer `member` message arrives.
+queue until a newer `member` message arrives. The Chatmodz admin endpoint
+deduplicates message and event IDs, so adapters can replay existing history
+without creating duplicate bubbles.
 
 ## Outgoing reply
 

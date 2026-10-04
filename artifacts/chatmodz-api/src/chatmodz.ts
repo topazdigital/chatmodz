@@ -31,6 +31,12 @@ type Operator = {
   status: string
 }
 
+class AdminActionError extends Error {
+  constructor(message: string, readonly statusCode: number) {
+    super(message)
+  }
+}
+
 declare global {
   namespace Express {
     interface Request {
@@ -1157,7 +1163,18 @@ router.get("/earnings", requireChatmodzAuth, async (req, res) => {
 
 router.get("/admin/applications", requireChatmodzAuth, requireChatmodzAdmin, async (_req, res) => {
   if (isDemoMode()) return res.json({ applications: demoApplications, demo: true })
-  try { res.json({ applications: await query("SELECT id, full_name, email, location, experience, status, created_at, reviewed_at FROM operator_applications ORDER BY created_at DESC LIMIT 200") }) }
+  try {
+    res.json({
+      applications: await query(
+        `SELECT a.id, a.full_name, a.email, a.location, a.experience, a.status, a.created_at, a.reviewed_at,
+                o.id AS operator_id, o.role AS operator_role, o.status AS operator_status
+         FROM operator_applications a
+         LEFT JOIN operators o ON LOWER(o.email) = LOWER(a.email)
+         ORDER BY a.created_at DESC
+         LIMIT 200`,
+      ),
+    })
+  }
   catch (error) { if (!failConfiguration(res, error)) res.status(500).json({ error: "Applications unavailable" }) }
 })
 
@@ -1167,6 +1184,7 @@ router.post("/admin/applications/:id/approve", requireChatmodzAuth, requireChatm
     const applications = await query<any>("SELECT * FROM operator_applications WHERE id = ? LIMIT 1", [applicationId])
     const application = applications[0]
     if (!application) return res.status(404).json({ error: "Application not found" })
+    if (application.status !== "pending") return res.status(409).json({ error: "This application has already been reviewed. Use the activation-code action to issue a replacement." })
     const existing = await query<any>("SELECT id FROM operators WHERE email = ? LIMIT 1", [application.email])
     if (existing.length) return res.status(409).json({ error: "An operator already uses this email" })
     const operatorPublicId = crypto.randomBytes(13).toString("base64url")
@@ -1182,6 +1200,142 @@ router.post("/admin/applications/:id/approve", requireChatmodzAuth, requireChatm
   } catch (error: any) {
     if (failConfiguration(res, error)) return
     res.status(500).json({ error: "Could not approve application" })
+  }
+})
+
+router.post("/admin/applications/:id/activation-code", requireChatmodzAuth, requireChatmodzAdmin, async (req, res) => {
+  const applicationId = Number(req.params.id)
+  if (!Number.isSafeInteger(applicationId) || applicationId < 1) return res.status(400).json({ error: "Invalid application" })
+  const activationCode = `cmz-${crypto.randomBytes(18).toString("base64url")}`
+  const placeholderPasswordHash = await bcrypt.hash(crypto.randomBytes(32).toString("hex"), 12)
+  try {
+    await withTransaction(async (connection) => {
+      const [applicationRows] = await connection.execute<any[]>(
+        "SELECT id, full_name, email, status FROM operator_applications WHERE id = ? FOR UPDATE",
+        [applicationId],
+      )
+      const application = applicationRows[0]
+      if (!application) throw new AdminActionError("Application not found", 404)
+      if (application.status !== "approved") throw new AdminActionError("Only approved applications can receive a replacement activation code", 409)
+
+      const [operatorRows] = await connection.execute<any[]>(
+        "SELECT id, role, status FROM operators WHERE email = ? LIMIT 1 FOR UPDATE",
+        [application.email],
+      )
+      let operatorId = Number(operatorRows[0]?.id || 0)
+      if (operatorRows[0]) {
+        if (operatorRows[0].role !== "operator" || operatorRows[0].status !== "training") {
+          throw new AdminActionError("This account is no longer awaiting activation. Use the operator status or account-recovery process instead.", 409)
+        }
+        const [usedCodes] = await connection.execute<any[]>(
+          "SELECT id FROM operator_activation_codes WHERE operator_id = ? AND used_at IS NOT NULL LIMIT 1",
+          [operatorId],
+        )
+        if (usedCodes.length) throw new AdminActionError("This account has already used an activation code and cannot receive another.", 409)
+      } else {
+        const [created] = await connection.execute<any>(
+          "INSERT INTO operators (public_id, full_name, email, password_hash, role, status) VALUES (?, ?, ?, ?, 'operator', 'training')",
+          [crypto.randomBytes(13).toString("base64url"), application.full_name, application.email, placeholderPasswordHash],
+        )
+        operatorId = Number(created.insertId)
+      }
+
+      await connection.execute(
+        "UPDATE operator_activation_codes SET revoked_at = NOW() WHERE operator_id = ? AND used_at IS NULL AND revoked_at IS NULL",
+        [operatorId],
+      )
+      await connection.execute(
+        "INSERT INTO operator_activation_codes (operator_id, code_hash, expires_at) VALUES (?, ?, DATE_ADD(NOW(), INTERVAL 72 HOUR))",
+        [operatorId, sha256(activationCode)],
+      )
+      await connection.execute(
+        "INSERT INTO audit_log (actor_operator_id, action, entity_type, entity_id, metadata_json) VALUES (?, 'reissue_activation_code', 'operator', ?, ?)",
+        [req.chatmodzOperator!.id, operatorId, JSON.stringify({ applicationId })],
+      )
+    })
+    res.json({ activationCode, expiresInHours: 72 })
+  } catch (error) {
+    if (error instanceof AdminActionError) return res.status(error.statusCode).json({ error: error.message })
+    if (!failConfiguration(res, error)) res.status(500).json({ error: "Could not issue a replacement activation code" })
+  }
+})
+
+router.delete("/admin/applications/:id", requireChatmodzAuth, requireChatmodzAdmin, async (req, res) => {
+  const applicationId = Number(req.params.id)
+  if (!Number.isSafeInteger(applicationId) || applicationId < 1) return res.status(400).json({ error: "Invalid application" })
+  try {
+    const [applicationRows] = await query<any>(
+      "SELECT id, full_name, email FROM operator_applications WHERE id = ? LIMIT 1",
+      [applicationId],
+    )
+    const application = applicationRows
+    if (!application) return res.status(404).json({ error: "Application not found" })
+
+    let accountRemoved = false
+    await withTransaction(async (connection) => {
+      const [lockedApplications] = await connection.execute<any[]>(
+        "SELECT id, full_name, email FROM operator_applications WHERE id = ? FOR UPDATE",
+        [applicationId],
+      )
+      const lockedApplication = lockedApplications[0]
+      if (!lockedApplication) throw new AdminActionError("Application not found", 404)
+
+      const [operatorRows] = await connection.execute<any[]>(
+        "SELECT id, role, status FROM operators WHERE email = ? LIMIT 1 FOR UPDATE",
+        [lockedApplication.email],
+      )
+      const operator = operatorRows[0]
+      if (operator) {
+        if (operator.role !== "operator" || operator.status !== "training") {
+          throw new AdminActionError("Only an unactivated training account can be deleted with its application. Suspend an activated account instead.", 409)
+        }
+        const operatorId = Number(operator.id)
+        const [usedCodes] = await connection.execute<any[]>(
+          "SELECT id FROM operator_activation_codes WHERE operator_id = ? AND used_at IS NOT NULL LIMIT 1",
+          [operatorId],
+        )
+        const [earnings] = await connection.execute<any[]>(
+          "SELECT id FROM operator_earnings WHERE operator_id = ? LIMIT 1",
+          [operatorId],
+        )
+        const [sentMessages] = await connection.execute<any[]>(
+          "SELECT id FROM messages WHERE sent_by_operator_id = ? LIMIT 1",
+          [operatorId],
+        )
+        const [assignments] = await connection.execute<any[]>(
+          "SELECT id FROM conversation_assignments WHERE operator_id = ? LIMIT 1",
+          [operatorId],
+        )
+        const [claimedConversations] = await connection.execute<any[]>(
+          "SELECT id FROM conversations WHERE assigned_operator_id = ? LIMIT 1",
+          [operatorId],
+        )
+        const [activities] = await connection.execute<any[]>(
+          "SELECT id FROM operator_activity WHERE operator_id = ? LIMIT 1",
+          [operatorId],
+        )
+        if (usedCodes.length || earnings.length || sentMessages.length || assignments.length || claimedConversations.length || activities.length) {
+          throw new AdminActionError("This account has activation or work history and cannot be deleted. Suspend it from the Operators tab instead.", 409)
+        }
+
+        await connection.execute(
+          "INSERT INTO audit_log (actor_operator_id, action, entity_type, entity_id, metadata_json) VALUES (?, 'delete_unactivated_operator', 'operator', ?, ?)",
+          [req.chatmodzOperator!.id, operatorId, JSON.stringify({ applicationId })],
+        )
+        await connection.execute("DELETE FROM operators WHERE id = ?", [operatorId])
+        accountRemoved = true
+      }
+
+      await connection.execute(
+        "INSERT INTO audit_log (actor_operator_id, action, entity_type, entity_id, metadata_json) VALUES (?, 'delete_operator_application', 'operator_application', ?, ?)",
+        [req.chatmodzOperator!.id, applicationId, JSON.stringify({ accountRemoved: Boolean(operator) })],
+      )
+      await connection.execute("DELETE FROM operator_applications WHERE id = ?", [applicationId])
+    })
+    res.json({ deleted: true, accountRemoved })
+  } catch (error) {
+    if (error instanceof AdminActionError) return res.status(error.statusCode).json({ error: error.message })
+    if (!failConfiguration(res, error)) res.status(500).json({ error: "Could not delete application" })
   }
 })
 
@@ -1261,7 +1415,7 @@ router.post("/admin/operators/:id/role", requireChatmodzAuth, requireChatmodzAdm
     res.json({ updated: true })
   } catch (error: any) {
     if (error?.code === "NOT_FOUND") return res.status(404).json({ error: "Operator not found" })
-    if (!failConfiguration(res)) res.status(500).json({ error: "Could not update operator role" })
+    if (!failConfiguration(res, error)) res.status(500).json({ error: "Could not update operator role" })
   }
 })
 
@@ -1408,7 +1562,7 @@ router.post("/recruiter/operators/:id/status", requireChatmodzAuth, requireChatm
     await query("INSERT INTO audit_log (actor_operator_id, action, entity_type, entity_id, metadata_json) VALUES (?, 'change_operator_status', 'operator', ?, ?)", [req.chatmodzOperator!.id, operatorId, JSON.stringify({ status })])
     res.json({ updated: true })
   } catch (error) {
-    if (!failConfiguration(res)) res.status(500).json({ error: "Could not update operator status" })
+    if (!failConfiguration(res, error)) res.status(500).json({ error: "Could not update operator status" })
   }
 })
 

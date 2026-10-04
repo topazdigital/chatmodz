@@ -6,6 +6,7 @@ import {
   BarChart3,
   Bell,
   CalendarDays,
+  Copy,
   ChevronLeft,
   ChevronRight,
   CircleHelp,
@@ -24,6 +25,7 @@ import {
   Search,
   Send,
   ShieldCheck,
+  Trash2,
   UnlockKeyhole,
   UserRound,
   UserPlus,
@@ -1113,6 +1115,7 @@ function AdminPage() {
   const [editingLevel, setEditingLevel] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [notice, setNotice] = useState("");
+  const [issuedActivation, setIssuedActivation] = useState<{ name: string; code: string; expiresInHours: number } | null>(null);
   const load = useCallback(async (requestedTab: AdminTab = tab) => {
     if (!token || !isAdministrator) {
       setLoading(false);
@@ -1150,12 +1153,41 @@ function AdminPage() {
     return result;
   };
   if ((tab as string) === "sites") return <Shell><div className="page"><div className="page-head"><div><div className="eyebrow">Administrator control room</div><h1 className="page-title">Operations admin</h1><p className="page-subtitle">Applications, operators, connected sites, delivery health, attribution, and operator earnings.</p></div><button className="button ghost compact" onClick={() => load()}><RefreshCw size={13} /> Refresh</button></div><div className="admin-tabs">{(["applications", "operators", "sites", "report", "compensation"] as const).map((item) => <button key={item} className={`filter-button ${tab === item ? "selected" : ""}`} onClick={() => setTab(item)}>{item === "applications" ? "Applications" : item === "operators" ? "Operators" : item === "sites" ? "Connected sites" : item === "report" ? "Reporting" : <><DollarSign size={13} /> Pay &amp; levels</>}</button>)}</div><SiteManagementPanel sites={data.sites} action={action} load={load} setNotice={setNotice} /><Toast message={notice} /></div></Shell>;
-  const approve = async (id: number) => {
+  const approve = async (application: any) => {
     try {
-      const result = await action(`/api/chatmodz/admin/applications/${id}/approve`);
-      setNotice(`Activation code: ${result.activationCode} — copy it now; it is shown once.`);
-      await load();
+      const result = await action(`/api/chatmodz/admin/applications/${application.id}/approve`);
+      setIssuedActivation({ name: application.full_name, code: result.activationCode, expiresInHours: result.expiresInHours });
+      setNotice("Application approved. Copy the activation code and send it to the operator.");
+      await load("applications");
     } catch (error) { setNotice(error instanceof Error ? error.message : "Approval failed"); }
+  };
+  const issueActivationCode = async (application: any) => {
+    try {
+      const result = await action(`/api/chatmodz/admin/applications/${application.id}/activation-code`);
+      setIssuedActivation({ name: application.full_name, code: result.activationCode, expiresInHours: result.expiresInHours });
+      setNotice("A new activation code is ready. The previous unused code has been invalidated.");
+      await load("applications");
+    } catch (error) { setNotice(error instanceof Error ? error.message : "Could not issue activation code"); }
+  };
+  const deleteApplication = async (application: any) => {
+    const removesAccount = application.operator_role === "operator" && application.operator_status === "training";
+    const accountText = removesAccount ? " The unactivated operator account will also be permanently deleted." : "";
+    if (!window.confirm(`Permanently delete ${application.full_name}'s application?${accountText} This cannot be undone. Accounts that have been activated or have work history cannot be deleted here.`)) return;
+    try {
+      const result = await action(`/api/chatmodz/admin/applications/${application.id}`, "DELETE");
+      setIssuedActivation(null);
+      setNotice(result.accountRemoved ? "Application and unactivated operator account deleted." : "Application deleted.");
+      await load("applications");
+    } catch (error) { setNotice(error instanceof Error ? error.message : "Could not delete application"); }
+  };
+  const copyActivationCode = async () => {
+    if (!issuedActivation) return;
+    try {
+      await navigator.clipboard.writeText(issuedActivation.code);
+      setNotice("Activation code copied.");
+    } catch {
+      setNotice("Clipboard unavailable. Select and copy the activation code shown above.");
+    }
   };
   const reject = async (id: number) => {
     try { await action(`/api/chatmodz/admin/applications/${id}/reject`); setNotice("Application rejected"); await load(); }
@@ -1207,7 +1239,113 @@ function AdminPage() {
     </div>
     <section className="panel"><div className="panel-head"><div><div className="panel-title">Message earnings ledger</div><div className="panel-kicker">Every delivered reply keeps its original level and rate</div></div></div><div className="table-wrap"><table className="data-table"><thead><tr><th>Message</th><th>Operator</th><th>Level</th><th>Amount</th><th>Recorded</th><th>Status</th><th>Action</th></tr></thead><tbody>{compensation.recent.length ? compensation.recent.map((earning) => <tr key={earning.id}><td className="mono">#{earning.messageId}</td><td>{earning.operatorName}</td><td>{earning.levelName}</td><td className="money-cell">{money(earning.rateMinor, earning.currency)}</td><td>{new Date(earning.createdAt).toLocaleString()}</td><td><StatusPill type={earning.status === "paid" ? "active" : earning.status === "void" ? "rejected" : "pending"}>{earning.status}</StatusPill></td><td>{earning.status !== "void" ? <select className="form-field compact-select" value={earning.status} onChange={(event) => updateEarningStatus(earning.id, event.target.value)}><option value="pending">Pending</option><option value="paid">Paid</option><option value="void">Void</option></select> : "—"}</td></tr>) : <tr><td colSpan={7}>No delivered replies have been recorded yet.</td></tr>}</tbody></table></div></section>
   </div>;
-  return <Shell><div className="page"><div className="page-head"><div><div className="eyebrow">Administrator control room</div><h1 className="page-title">Operations admin</h1><p className="page-subtitle">Applications, operators, connected sites, delivery health, attribution, and operator earnings.</p></div><button className="button ghost compact" onClick={() => load()}><RefreshCw size={13} /> Refresh</button></div><div className="admin-tabs">{(["applications", "operators", "sites", "report", "compensation"] as const).map((item) => <button key={item} className={`filter-button ${tab === item ? "selected" : ""}`} onClick={() => setTab(item)}>{item === "applications" ? "Applications" : item === "operators" ? "Operators" : item === "sites" ? "Connected sites" : item === "report" ? "Reporting" : <><DollarSign size={13} /> Pay &amp; levels</>}</button>)}</div>{loading ? <div className="empty-state panel"><RefreshCw className="spin" size={25} /><strong>Loading administrator data</strong></div> : tab === "compensation" ? compensationView : tab === "applications" ? <section className="panel"><div className="panel-head"><div><div className="panel-title">Operator applications</div><div className="panel-kicker">Approve to issue a one-time activation code</div></div></div><div className="table-wrap"><table className="data-table"><thead><tr><th>Applicant</th><th>Location</th><th>Experience</th><th>Status</th><th>Actions</th></tr></thead><tbody>{data.applications.length ? data.applications.map((application) => <tr key={application.id}><td><strong>{application.full_name}</strong><br /><span className="tiny-text">{application.email}</span></td><td>{application.location || "—"}</td><td className="table-long">{application.experience || "—"}</td><td><StatusPill type={application.status === "pending" ? "pending" : "active"}>{application.status}</StatusPill></td><td>{application.status === "pending" ? <div className="inline-actions"><button className="button amber compact" onClick={() => approve(application.id)}>Approve</button><button className="button danger compact" onClick={() => reject(application.id)}>Reject</button></div> : "Reviewed"}</td></tr>) : <tr><td colSpan={5}>No applications returned from Chatmodz MySQL.</td></tr>}</tbody></table></div></section> : tab === "operators" ? <section className="panel"><div className="panel-head"><div><div className="panel-title">Operator directory</div><div className="panel-kicker">Status and recruiter roles are audited server-side</div></div></div><div className="table-wrap"><table className="data-table"><thead><tr><th>Operator</th><th>Role</th><th>Status</th><th>Last active</th><th>Action</th></tr></thead><tbody>{data.operators.map((operator) => <tr key={operator.id}><td><strong>{operator.full_name}</strong><br /><span className="tiny-text">{operator.email}</span></td><td><select className="form-field compact-select" value={operator.role === "recruiter" ? "recruiter" : "operator"} onChange={(event) => setOperatorRole(operator.id, event.target.value)} disabled={operator.role === "admin"}><option value="operator">Operator</option><option value="recruiter">Recruiter</option></select></td><td><StatusPill type={operator.status === "active" ? "active" : "pending"}>{operator.status}</StatusPill></td><td>{operator.last_active_at ? new Date(operator.last_active_at).toLocaleString() : "Never"}</td><td><select className="form-field compact-select" value={operator.status} onChange={(event) => setOperatorStatus(operator.id, event.target.value)}><option value="training">Training</option><option value="active">Active</option><option value="suspended">Suspended</option><option value="rejected">Rejected</option></select></td></tr>)}</tbody></table></div></section> : tab === "sites" ? <section className="panel"><div className="panel-head"><div><div className="panel-title">Connected sites</div><div className="panel-kicker">Secrets remain in environment configuration; only the key name is shown</div></div></div><div className="table-wrap"><table className="data-table"><thead><tr><th>Site</th><th>Endpoint</th><th>Secret env key</th><th>Status</th><th>Action</th></tr></thead><tbody>{data.sites.map((site) => <tr key={site.id}><td><strong>{site.display_name}</strong><br /><span className="tiny-text mono">{site.internal_name}</span></td><td className="table-long">{site.endpoint_base_url || "Inbound only"}</td><td className="mono">{site.secret_env_key || "—"}</td><td><StatusPill type={site.status === "active" ? "active" : "pending"}>{site.status}</StatusPill></td><td><select className="form-field compact-select" value={site.status} onChange={(event) => setSiteStatus(site.id, event.target.value)}><option value="active">Active</option><option value="paused">Paused</option><option value="disconnected">Disconnected</option></select></td></tr>)}</tbody></table></div></section> : <section className="panel"><div className="panel-head"><div><div className="panel-title">Delivery and attribution report</div><div className="panel-kicker">Site attribution is available only in this administrator view</div></div></div><div className="metric-grid admin-metrics"><Metric label="Conversations" value={String(summary.conversations || 0)} detail="Stored in Chatmodz" /><Metric label="Replies" value={String(summary.replies || 0)} detail="Operator-authored messages" color="var(--teal)" /><Metric label="Failed deliveries" value={String(summary.failed_deliveries || 0)} detail="Requires adapter follow-up" color="var(--red)" /></div><div className="report-columns"><div><h3>By operator</h3>{(data.report.byOperator || []).map((row) => <div className="report-line" key={row.id}><span>{row.name}</span><strong>{row.replies} replies</strong></div>)}</div><div><h3>By connected site</h3>{(data.report.bySite || []).map((row) => <div className="report-line" key={row.id}><span>{row.display_name} <small>{row.status}</small></span><strong>{row.conversations} conversations · {row.failed_deliveries || 0} failed</strong></div>)}</div></div></section>}<Toast message={notice} /></div></Shell>;
+  return <Shell>
+    <div className="page">
+      <div className="page-head">
+        <div>
+          <div className="eyebrow">Administrator control room</div>
+          <h1 className="page-title">Operations admin</h1>
+          <p className="page-subtitle">Applications, operators, connected sites, delivery health, attribution, and operator earnings.</p>
+        </div>
+        <button className="button ghost compact" onClick={() => load()}><RefreshCw size={13} /> Refresh</button>
+      </div>
+      <div className="admin-tabs">
+        {(["applications", "operators", "sites", "report", "compensation"] as const).map((item) => (
+          <button key={item} className={`filter-button ${tab === item ? "selected" : ""}`} onClick={() => setTab(item)}>
+            {item === "applications" ? "Applications" : item === "operators" ? "Operators" : item === "sites" ? "Connected sites" : item === "report" ? "Reporting" : <><DollarSign size={13} /> Pay &amp; levels</>}
+          </button>
+        ))}
+      </div>
+      {issuedActivation && <section className="activation-code-panel" aria-label="New one-time activation code">
+        <div className="activation-code-copy">
+          <strong>One-time activation code for {issuedActivation.name}</strong>
+          <span>Expires in {issuedActivation.expiresInHours} hours. Copy and send it to the operator; this code is shown only here.</span>
+          <code>{issuedActivation.code}</code>
+        </div>
+        <div className="inline-actions">
+          <button className="button amber compact" onClick={copyActivationCode}><Copy size={13} /> Copy code</button>
+          <button className="icon-button" aria-label="Dismiss activation code" onClick={() => setIssuedActivation(null)}><X size={15} /></button>
+        </div>
+      </section>}
+      {loading ? <div className="empty-state panel"><RefreshCw className="spin" size={25} /><strong>Loading administrator data</strong></div>
+        : tab === "compensation" ? compensationView
+        : tab === "applications" ? <section className="panel">
+          <div className="panel-head">
+            <div>
+              <div className="panel-title">Operator applications</div>
+              <div className="panel-kicker">Approved operators who missed their code can receive a replacement here.</div>
+            </div>
+          </div>
+          <div className="table-wrap">
+            <table className="data-table">
+              <thead><tr><th>Applicant</th><th>Location</th><th>Experience</th><th>Status</th><th>Actions</th></tr></thead>
+              <tbody>{data.applications.length ? data.applications.map((application) => {
+                const hasUnactivatedOperator = application.operator_role === "operator" && application.operator_status === "training";
+                const canDelete = !application.operator_id || hasUnactivatedOperator;
+                return <tr key={application.id}>
+                  <td><strong>{application.full_name}</strong><br /><span className="tiny-text">{application.email}</span></td>
+                  <td>{application.location || "—"}</td>
+                  <td className="table-long">{application.experience || "—"}</td>
+                  <td><StatusPill type={application.status === "pending" ? "pending" : application.status === "rejected" ? "rejected" : "active"}>{application.status}</StatusPill></td>
+                  <td><div className="inline-actions">
+                    {application.status === "pending" ? <>
+                      <button className="button amber compact" onClick={() => approve(application)}>Approve</button>
+                      <button className="button danger compact" onClick={() => reject(application.id)}>Reject</button>
+                    </> : application.status === "approved" && (!application.operator_id || hasUnactivatedOperator) ? (
+                      <button className="button amber compact" onClick={() => issueActivationCode(application)}>
+                        {hasUnactivatedOperator ? "Reissue code" : "Issue code"}
+                      </button>
+                    ) : application.operator_status === "active" ? <span className="tiny-text">Account activated</span> : <span className="tiny-text">Reviewed</span>}
+                    {canDelete && <button className="button danger compact" onClick={() => deleteApplication(application)}><Trash2 size={13} /> Delete</button>}
+                  </div></td>
+                </tr>;
+              }) : <tr><td colSpan={5}>No applications returned from Chatmodz MySQL.</td></tr>}</tbody>
+            </table>
+          </div>
+        </section>
+        : tab === "operators" ? <section className="panel">
+          <div className="panel-head"><div><div className="panel-title">Operator directory</div><div className="panel-kicker">Status and recruiter roles are audited server-side</div></div></div>
+          <div className="table-wrap">
+            <table className="data-table">
+              <thead><tr><th>Operator</th><th>Role</th><th>Status</th><th>Last active</th><th>Action</th></tr></thead>
+              <tbody>{data.operators.map((operator) => <tr key={operator.id}>
+                <td><strong>{operator.full_name}</strong><br /><span className="tiny-text">{operator.email}</span></td>
+                <td><select className="form-field compact-select" value={operator.role === "recruiter" ? "recruiter" : "operator"} onChange={(event) => setOperatorRole(operator.id, event.target.value)} disabled={operator.role === "admin"}><option value="operator">Operator</option><option value="recruiter">Recruiter</option></select></td>
+                <td><StatusPill type={operator.status === "active" ? "active" : "pending"}>{operator.status}</StatusPill></td>
+                <td>{operator.last_active_at ? new Date(operator.last_active_at).toLocaleString() : "Never"}</td>
+                <td><select className="form-field compact-select" value={operator.status} onChange={(event) => setOperatorStatus(operator.id, event.target.value)}><option value="training">Training</option><option value="active">Active</option><option value="suspended">Suspended</option><option value="rejected">Rejected</option></select></td>
+              </tr>)}</tbody>
+            </table>
+          </div>
+        </section>
+        : tab === "sites" ? <section className="panel">
+          <div className="panel-head"><div><div className="panel-title">Connected sites</div><div className="panel-kicker">Secrets remain in environment configuration; only the key name is shown</div></div></div>
+          <div className="table-wrap"><table className="data-table">
+            <thead><tr><th>Site</th><th>Endpoint</th><th>Secret env key</th><th>Status</th><th>Action</th></tr></thead>
+            <tbody>{data.sites.map((site) => <tr key={site.id}>
+              <td><strong>{site.display_name}</strong><br /><span className="tiny-text mono">{site.internal_name}</span></td>
+              <td className="table-long">{site.endpoint_base_url || "Inbound only"}</td>
+              <td className="mono">{site.secret_env_key || "—"}</td>
+              <td><StatusPill type={site.status === "active" ? "active" : "pending"}>{site.status}</StatusPill></td>
+              <td><select className="form-field compact-select" value={site.status} onChange={(event) => setSiteStatus(site.id, event.target.value)}><option value="active">Active</option><option value="paused">Paused</option><option value="disconnected">Disconnected</option></select></td>
+            </tr>)}</tbody>
+          </table></div>
+        </section>
+        : <section className="panel">
+          <div className="panel-head"><div><div className="panel-title">Delivery and attribution report</div><div className="panel-kicker">Site attribution is available only in this administrator view</div></div></div>
+          <div className="metric-grid admin-metrics">
+            <Metric label="Conversations" value={String(summary.conversations || 0)} detail="Stored in Chatmodz" />
+            <Metric label="Replies" value={String(summary.replies || 0)} detail="Operator-authored messages" color="var(--teal)" />
+            <Metric label="Failed deliveries" value={String(summary.failed_deliveries || 0)} detail="Requires adapter follow-up" color="var(--red)" />
+          </div>
+          <div className="report-columns">
+            <div><h3>By operator</h3>{(data.report.byOperator || []).map((row) => <div className="report-line" key={row.id}><span>{row.name}</span><strong>{row.replies} replies</strong></div>)}</div>
+            <div><h3>By connected site</h3>{(data.report.bySite || []).map((row) => <div className="report-line" key={row.id}><span>{row.display_name} <small>{row.status}</small></span><strong>{row.conversations} conversations · {row.failed_deliveries || 0} failed</strong></div>)}</div>
+          </div>
+        </section>}
+      <Toast message={notice} />
+    </div>
+  </Shell>;
 }
 
 function HomePage() {

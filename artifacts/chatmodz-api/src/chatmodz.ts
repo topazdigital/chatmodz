@@ -197,7 +197,7 @@ export async function initializeChatmodz() {
   }
 }
 
-function profileDetails(value: unknown): ProfileDetails | undefined {
+function profileDetails(value: unknown, siteBaseUrl?: unknown): ProfileDetails | undefined {
   let candidate = value
   if (typeof candidate === "string") {
     try {
@@ -217,6 +217,10 @@ function profileDetails(value: unknown): ProfileDetails | undefined {
     const gallery = record.gallery
       .filter((item): item is string => typeof item === "string" && item.trim().length > 0)
       .map((item) => item.trim().slice(0, 500))
+      .map((item) => typeof siteBaseUrl === "string" && siteBaseUrl.trim()
+        ? profilePhotoPath(item, siteBaseUrl)
+        : item)
+      .filter(Boolean)
       .slice(0, MAX_PROFILE_GALLERY_ITEMS)
     if (gallery.length) result.gallery = gallery
   }
@@ -361,7 +365,7 @@ function secretFor(site: any) {
 function resolveOperatorMediaUrl(value: unknown, siteBaseUrl?: unknown) {
   const path = typeof value === "string" ? value.trim() : ""
   if (!path) return ""
-  if (path.startsWith("/api/chatmodz/media/")) return path
+  if (path.startsWith("/api/chatmodz/")) return path
   const candidate = path.startsWith("//") ? `https:${path}` : path
   try {
     const siteBase = typeof siteBaseUrl === "string" ? new URL(siteBaseUrl) : null
@@ -417,10 +421,19 @@ function normalizeRichProfilePhoto(value: unknown, siteBaseUrl?: unknown) {
 
 function profilePhotoPath(value: unknown, siteBaseUrl?: unknown) {
   const resolved = resolveOperatorMediaUrl(normalizeRichProfilePhoto(value, siteBaseUrl), siteBaseUrl)
-  if (!resolved || resolved.startsWith("/api/chatmodz/media/")) return resolved
+  if (!resolved || resolved.startsWith("/api/chatmodz/")) return resolved
   try {
     const url = new URL(resolved)
-    return url.protocol === "http:"
+    let connectedSiteHost = false
+    if (typeof siteBaseUrl === "string" && siteBaseUrl.trim()) {
+      try {
+        connectedSiteHost = hostnameMatchesAllowedHost(url.hostname, new URL(siteBaseUrl).hostname)
+      } catch {
+        connectedSiteHost = false
+      }
+    }
+    const connectedRichDatingHost = isRichDatingHost(siteBaseUrl) && isRichDatingHost(url.toString())
+    return url.protocol === "http:" || connectedSiteHost || connectedRichDatingHost
       ? `/api/chatmodz/profile-photo?url=${encodeURIComponent(url.toString())}`
       : resolved
   } catch {
@@ -436,7 +449,9 @@ async function allowedPhotoHost(hostname: string) {
   const sites = await query<any>("SELECT endpoint_base_url FROM sites WHERE status = 'active' AND endpoint_base_url IS NOT NULL")
   return sites.some((site) => {
     try {
-      return hostnameMatchesAllowedHost(hostname, new URL(String(site.endpoint_base_url)).hostname)
+      const endpoint = String(site.endpoint_base_url)
+      return hostnameMatchesAllowedHost(hostname, new URL(endpoint).hostname)
+        || (isRichDatingHost(endpoint) && isRichDatingHost(`https://${hostname}`))
     } catch {
       return false
     }
@@ -776,12 +791,14 @@ router.get("/conversations/:key/messages", requireChatmodzAuth, async (req, res)
         message: row.body,
         time: Math.floor(new Date(row.sent_at).getTime() / 1000),
         read: row.delivery_status === "delivered" ? 1 : 0,
-        mediaUrl: operatorMediaPath(row.media_proxy_url),
+        mediaUrl: row.media_type === "image"
+          ? profilePhotoPath(row.media_proxy_url, conversation.site_endpoint_base_url)
+          : operatorMediaPath(row.media_proxy_url, conversation.site_endpoint_base_url),
         mediaType: row.media_type || "",
       })),
       users: {
-        "-1": { id: -1, name: conversation.managed_profile_alias, photo: profilePhotoPath(conversation.managed_profile_photo_url, conversation.site_endpoint_base_url), profile: profileDetails(conversation.managed_profile_profile_json) },
-        "-2": { id: -2, name: conversation.member_alias, photo: profilePhotoPath(conversation.member_photo_url, conversation.site_endpoint_base_url), profile: profileDetails(conversation.member_profile_json) },
+        "-1": { id: -1, name: conversation.managed_profile_alias, photo: profilePhotoPath(conversation.managed_profile_photo_url, conversation.site_endpoint_base_url), profile: profileDetails(conversation.managed_profile_profile_json, conversation.site_endpoint_base_url) },
+        "-2": { id: -2, name: conversation.member_alias, photo: profilePhotoPath(conversation.member_photo_url, conversation.site_endpoint_base_url), profile: profileDetails(conversation.member_profile_json, conversation.site_endpoint_base_url) },
       },
       notes: {
         text: conversation.operator_notes || "",

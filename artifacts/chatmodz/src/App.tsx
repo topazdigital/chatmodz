@@ -225,39 +225,48 @@ function photoUrl(photo?: string) {
   return `/api/uploads/${encodeURIComponent(value)}`;
 }
 
-function Avatar({ photo, name, size = 36, shape = "circle" }: { photo?: string; name: string; size?: number; shape?: "circle" | "square" }) {
-  const { token } = useSession();
+function useImageSource(url: string, token?: string | null) {
   const [failed, setFailed] = useState(false);
   const [source, setSource] = useState("");
-  const initials = name.split(" ").map((part) => part[0]).join("").slice(0, 2).toUpperCase();
-  const style = { width: size, height: size, fontSize: Math.max(10, size * 0.32) };
   useEffect(() => {
     let objectUrl = "";
-    const resolved = photoUrl(photo);
+    const controller = new AbortController();
     setFailed(false);
     setSource("");
-    if (!resolved) return;
-    if (!resolved.startsWith("/api/chatmodz/profile-photo")) {
-      setSource(resolved);
+    if (!url) return;
+    if (!url.startsWith("/api/chatmodz/profile-photo")) {
+      setSource(url);
       return;
     }
     const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
-    fetch(resolved, { headers })
+    fetch(url, { headers, signal: controller.signal })
       .then((response) => {
-        if (!response.ok) throw new Error("Profile photo unavailable");
+        if (!response.ok) throw new Error("Image unavailable");
         return response.blob();
       })
       .then((blob) => {
         objectUrl = URL.createObjectURL(blob);
         setSource(objectUrl);
       })
-      .catch(() => setFailed(true));
+      .catch(() => {
+        if (!controller.signal.aborted) setFailed(true);
+      });
     return () => {
+      controller.abort();
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [photo, token]);
+  }, [url, token]);
+  return { source, failed, markFailed: () => setFailed(true) };
+}
+
+function Avatar({ photo, name, size = 36, shape = "circle" }: { photo?: string; name: string; size?: number; shape?: "circle" | "square" }) {
+  const { token } = useSession();
+  const resolved = photoUrl(photo);
+  const { source, failed, markFailed } = useImageSource(resolved, token);
+  const initials = name.split(" ").map((part) => part[0]).join("").slice(0, 2).toUpperCase();
+  const style = { width: size, height: size, fontSize: Math.max(10, size * 0.32) };
   if (source && !failed) {
-    return <img className={`real-avatar ${shape === "square" ? "avatar-square" : ""}`} src={source} alt={name} style={style} onError={() => setFailed(true)} />;
+    return <img className={`real-avatar ${shape === "square" ? "avatar-square" : ""}`} src={source} alt={name} style={style} onError={markFailed} />;
   }
   return <div className={`avatar ${shape === "square" ? "avatar-square" : ""}`} style={style}>{initials || "?"}</div>;
 }
@@ -605,10 +614,20 @@ function ConversationRow({ conversation, userId, selected, onOpen, style }: { co
 function MediaBubble({ message }: { message: Message }) {
   if (!message.mediaUrl || !message.mediaType) return null;
   const url = message.mediaUrl.startsWith("/") || message.mediaUrl.startsWith("http") ? message.mediaUrl : `/api/uploads/${message.mediaUrl}`;
-  if (message.mediaType === "image") return <a href={url} target="_blank" rel="noreferrer"><img src={url} alt="Attached media" className="message-media" /></a>;
+  if (message.mediaType === "image") return <MessageImage url={url} />;
   if (message.mediaType === "video") return <video src={url} controls className="message-media" preload="metadata" />;
   if (message.mediaType === "audio") return <div className="audio-media"><Volume2 size={15} /><audio src={url} controls preload="metadata" /></div>;
   return null;
+}
+
+function MessageImage({ url }: { url: string }) {
+  const { token } = useSession();
+  const { source, failed, markFailed } = useImageSource(url, token);
+  if (failed) return <div className="message-media-state">Image unavailable</div>;
+  if (!source) return <div className="message-media-state">Loading image…</div>;
+  return <a className="message-media-link" href={source} target="_blank" rel="noreferrer">
+    <img src={source} alt="Attached image" className="message-media" onError={markFailed} />
+  </a>;
 }
 
 function ProfileCard({ profileUser, tone }: { profileUser: ConvUser; tone: "member" | "managed" }) {
@@ -620,7 +639,7 @@ function ProfileCard({ profileUser, tone }: { profileUser: ConvUser; tone: "memb
       <Avatar photo={gallery[0]} name={profileUser.name} size={64} shape="square" />
       <div><span className="profile-role">{tone === "member" ? "Member" : "Managed profile"}</span><strong>{profileUser.name}</strong>{profile.location && <span className="profile-location"><MapPin size={12} /> {profile.location}</span>}</div>
     </div>
-    {gallery.length > 1 && <div className="profile-gallery" aria-label={`${profileUser.name} photo gallery`}>{gallery.slice(1, 5).map((photo, index) => <Avatar key={`${photo}-${index}`} photo={photo} name={profileUser.name} size={46} shape="square" />)}</div>}
+    {gallery.length > 1 && <div className="profile-gallery" aria-label={`${profileUser.name} photo gallery`}>{gallery.slice(1).map((photo, index) => <Avatar key={`${photo}-${index}`} photo={photo} name={profileUser.name} size={46} shape="square" />)}</div>}
     {profile.bio && <p className="profile-bio">{profile.bio}</p>}
     {hasDetails ? <div className="profile-facts">{profile.age && <span><CalendarDays size={12} /> {profile.age} years</span>}{Object.entries(profile.details || {}).slice(0, 7).map(([label, value]) => <span key={label}><strong>{label}</strong>{value}</span>)}</div> : <span className="profile-empty">Profile details were not supplied by the connected site.</span>}
   </article>;

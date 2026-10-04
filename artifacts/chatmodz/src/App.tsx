@@ -942,7 +942,7 @@ function ConversationPage({ inline = false, embeddedKey = "" }: { inline?: boole
     setSavingNotes(true);
     try {
       const response = await authFetch(token, `/api/chatmodz/conversations/${selected.key}/notes`, {
-        method: "PUT",
+        method: "POST",
         body: JSON.stringify({ notes: notes.text }),
       });
       const data = await response.json().catch(() => ({}));

@@ -21,8 +21,8 @@ The web artifact is a live-data client for the dedicated Chatmodz API:
   status, media metadata, and browser push notification controls
 - visible reply rules, 25-minute timing alerts and review records, and
   recruiter/admin-only Panic Room reports for the defined severe safety cases
-- shared conversation notes with lock checks and both PUT and legacy POST save
-  compatibility
+- shared conversation notes with lock checks and POST requests for Apache
+  compatibility; the API also accepts PUT from older clients
 - administrator-only application approval, operator status, site health,
   attribution, delivery reporting, and operator compensation levels
 - three-level staff hierarchy: administrators manage recruiters, recruiters

@@ -17,7 +17,9 @@ The project uses two workflows:
 
 The web client proxies `/api` requests to the API.
 
-The operator queue contains only conversations whose newest message is from
+Operators do not receive live access until they complete training and a recruiter
+or administrator approves the assessment. The operator queue contains only
+conversations whose newest message is from
 the member. Replies sent from Chatmodz or reported by a connected site as
 `managed_profile` remain in the full conversation history but are removed from
 the queue until a new member message arrives. Participant photos are returned
@@ -31,6 +33,29 @@ on the right. Site adapters may also send optional `memberProfile` and
 `managedProfile` objects with location, age, bio, gallery, and small detail-map
 values. These are stored as optional conversation JSON and omitted gracefully
 when a source does not provide them.
+
+## Operator training and live-chat rules
+
+Operator accounts start in training. Before live conversations unlock, they must
+acknowledge the current rules, complete a 60-second typing test (40 WPM and 90%
+accuracy), score at least 80% on the safety quiz with its critical safety item
+correct, and write three simulated practice replies of at least 75 characters.
+Passing the automatic checks only submits the attempt; a recruiter can review
+assigned operators and an administrator can review all operators. Failed
+attempts can be retaken. Both the API authorization middleware and operator
+status endpoints enforce approval, so hiding the queue in the client is not the
+security boundary.
+
+Live replies must be original, at least 75 non-whitespace characters, answer the
+member and ask a relevant follow-up question, and stay within the 25-minute
+reply window. Contact details, off-platform contact, in-person meetings,
+“I love you,” operator-initiated sexual conversation, and illegal topics are
+prohibited. Late replies are recorded for recruiter/admin follow-up.
+
+Panic Room is limited to suspected underage users, illegal acts, suicidal intent
+with means, and persistent racism or hate. Reports are visible only to
+recruiters and administrators. Shared conversation notes require the operator
+to hold the conversation lock and are saved through the API.
 
 On startup the API checks for the conversation note and profile columns and
 adds any missing optional columns to an existing Chatmodz database. This keeps

@@ -6,7 +6,9 @@ import {
   BarChart3,
   Bell,
   CalendarDays,
+  ClipboardCheck,
   Copy,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   CircleHelp,
@@ -41,7 +43,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/not-found";
 
 const queryClient = new QueryClient();
-const MIN_REPLY_CHARS = 20;
+const MIN_REPLY_CHARS = 75;
 
 type AuthUser = {
   id: number;
@@ -51,15 +53,22 @@ type AuthUser = {
   photoThumb?: string;
   admin?: number;
   role?: "operator" | "recruiter" | "admin";
+  status?: string;
+  assessmentStatus?: string;
 };
 
 type AuthState = { user: AuthUser | null; token: string | null; loading: boolean };
-const AuthContext = createContext<AuthState & { login: (identifier: string, password: string) => Promise<void>; logout: () => void }>({
+const AuthContext = createContext<AuthState & {
+  login: (identifier: string, password: string) => Promise<void>;
+  logout: () => void;
+  refreshUser: () => Promise<void>;
+}>({
   user: null,
   token: null,
   loading: true,
   login: async () => undefined,
   logout: () => undefined,
+  refreshUser: async () => undefined,
 });
 
 function useSession() {
@@ -84,7 +93,11 @@ function storedAuth(): { user: AuthUser | null; token: string | null } {
   return { user: null, token: null };
 }
 
-function useAuthState(): AuthState & { login: (identifier: string, password: string) => Promise<void>; logout: () => void } {
+function useAuthState(): AuthState & {
+  login: (identifier: string, password: string) => Promise<void>;
+  logout: () => void;
+  refreshUser: () => Promise<void>;
+} {
   const [initial] = useState(storedAuth);
   const [user, setUser] = useState<AuthUser | null>(initial.user);
   const [token, setToken] = useState<string | null>(initial.token);
@@ -133,7 +146,18 @@ function useAuthState(): AuthState & { login: (identifier: string, password: str
     setToken(null);
   };
 
-  return { user, token, loading, login, logout };
+  const refreshUser = useCallback(async () => {
+    if (!token) return;
+    const response = await authFetch(token, "/api/chatmodz/auth/me");
+    if (!response.ok) return;
+    const freshUser = await response.json();
+    if (freshUser && typeof freshUser.id === "number") {
+      setUser(freshUser);
+      localStorage.setItem("chatmodz_auth", JSON.stringify({ user: freshUser, token }));
+    }
+  }, [token]);
+
+  return { user, token, loading, login, logout, refreshUser };
 }
 
 function authFetch(token: string | null, url: string, options: RequestInit = {}) {
@@ -457,9 +481,11 @@ function ApplyPage() {
 
 const navItems = [
   { href: "/", label: "Queue", icon: Inbox, roles: ["operator", "admin"] },
+  { href: "/training", label: "Operator training", icon: ClipboardCheck, roles: ["operator"] },
   { href: "/earnings", label: "Earnings", icon: DollarSign, roles: ["operator", "admin"] },
   { href: "/reports", label: "Reports", icon: BarChart3, roles: ["admin"] },
   { href: "/recruiter", label: "Recruiter desk", icon: UsersRound, roles: ["recruiter", "admin"] },
+  { href: "/reviews", label: "Operator tests", icon: ClipboardCheck, roles: ["recruiter", "admin"] },
   { href: "/admin", label: "Admin", icon: ShieldCheck, roles: ["admin"] },
 ];
 
@@ -469,11 +495,12 @@ function Shell({ children }: { children: ReactNode }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const current = navItems.find((item) => item.href === location)?.label ?? "Conversation";
   const initials = user?.name?.split(" ").map((part) => part[0]).join("").slice(0, 2).toUpperCase() || "?";
+  const liveOperatorAccess = user?.role !== "operator" || (user.status === "active" && user.assessmentStatus === "approved");
   return <div className="app-frame">
     <aside className={`sidebar ${mobileOpen ? "mobile-open" : ""}`}>
       <Logo />
       <div className="sidebar-label">Operations</div>
-      <nav>{navItems.filter((item) => item.roles.includes(user?.role || ((user?.admin ?? 0) >= 2 ? "admin" : "operator"))).map(({ href, label, icon: Icon }) => <Link key={href} href={href} className={`nav-link ${location === href ? "active" : ""}`} onClick={() => setMobileOpen(false)}><Icon /><span>{label}</span></Link>)}</nav>
+      <nav>{navItems.filter((item) => item.roles.includes(user?.role || ((user?.admin ?? 0) >= 2 ? "admin" : "operator")) && (item.href === "/training" ? user?.assessmentStatus !== "approved" : (item.href !== "/" && item.href !== "/earnings") || liveOperatorAccess)).map(({ href, label, icon: Icon }) => <Link key={href} href={href} className={`nav-link ${location === href ? "active" : ""}`} onClick={() => setMobileOpen(false)}><Icon /><span>{label}</span></Link>)}</nav>
       <div className="sidebar-label">Workspace</div>
       <Link href="/settings" className={`nav-link ${location === "/settings" ? "active" : ""}`} onClick={() => setMobileOpen(false)}><UserRound /><span>Account</span></Link>
       <div className="sidebar-spacer" />
@@ -541,6 +568,184 @@ function QueuePage() {
          <div className="queue-detail"><ConversationPage inline embeddedKey={selectedKey} /></div>
       </div>
       <Toast message={notice} />
+  </div></Shell>;
+}
+
+type TrainingAssessment = {
+  id: number;
+  status: string;
+  auto_passed?: boolean;
+  typing_wpm?: number;
+  typing_accuracy?: number;
+  quiz_score?: number;
+  submitted_at?: string;
+  reviewer_note?: string;
+  passage_id?: number;
+};
+
+type TrainingData = {
+  thresholds: { typingWpm: number; typingAccuracy: number; quizScore: number; replyCharacters: number; testSeconds: number };
+  policyVersion: string;
+  policies: { title: string; detail: string }[];
+  quiz: { id: string; prompt: string; options: { id: string; text: string }[] }[];
+  scenarios: { id: string; memberMessage: string }[];
+  assessment: TrainingAssessment | null;
+};
+
+type TypingAttempt = { id: number; passage: string; startedAt: string };
+
+function TrainingPage() {
+  const { token, user, refreshUser } = useSession();
+  const [data, setData] = useState<TrainingData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [notice, setNotice] = useState("");
+  const [rulesAccepted, setRulesAccepted] = useState(false);
+  const [quizAnswers, setQuizAnswers] = useState<Record<string, string>>({});
+  const [practiceResponses, setPracticeResponses] = useState<Record<string, string>>({});
+  const [attempt, setAttempt] = useState<TypingAttempt | null>(null);
+  const [typedText, setTypedText] = useState("");
+  const [secondsLeft, setSecondsLeft] = useState(60);
+  const [starting, setStarting] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+
+  const load = useCallback(async () => {
+    if (!token) return;
+    try {
+      const response = await authFetch(token, "/api/chatmodz/training");
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || "Training materials could not be loaded");
+      setData(result);
+      const current = result.assessment;
+      if (current?.status === "in_progress" && current.passage) {
+        const startedAt = current.started_at || current.startedAt || (current.startedAtMs ? new Date(Number(current.startedAtMs)).toISOString() : new Date().toISOString());
+        setAttempt({ id: Number(current.id), passage: current.passage, startedAt });
+        setSecondsLeft(Math.max(0, 60 - Math.floor((Date.now() - new Date(startedAt).getTime()) / 1000)));
+      }
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Training materials could not be loaded");
+    } finally {
+      setLoading(false);
+    }
+  }, [token]);
+
+  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    const timer = window.setInterval(() => { void refreshUser(); }, 20000);
+    return () => window.clearInterval(timer);
+  }, [refreshUser]);
+  useEffect(() => {
+    if (!attempt) return;
+    const update = () => {
+      const elapsed = Math.max(0, (Date.now() - new Date(attempt.startedAt).getTime()) / 1000);
+      setSecondsLeft(Math.max(0, Math.ceil(60 - elapsed)));
+    };
+    update();
+    const timer = window.setInterval(update, 250);
+    return () => window.clearInterval(timer);
+  }, [attempt]);
+
+  const elapsedSeconds = attempt ? Math.max(1, 60 - secondsLeft) : 1;
+  const correctChars = attempt
+    ? Array.from(typedText).reduce((count, character, index) => count + (character === Array.from(attempt.passage)[index] ? 1 : 0), 0)
+    : 0;
+  const liveWpm = Math.round((correctChars / 5 / elapsedSeconds) * 60);
+  const liveAccuracy = attempt
+    ? Math.round((correctChars / Math.max(1, Array.from(typedText).length)) * 100)
+    : 0;
+
+  const startTypingTest = async () => {
+    if (!token) return;
+    setStarting(true);
+    setNotice("");
+    try {
+      const response = await authFetch(token, "/api/chatmodz/training/start", { method: "POST" });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || "Typing test could not be started");
+      setAttempt({ id: Number(result.id), passage: result.passage, startedAt: result.startedAt });
+      setTypedText("");
+      setSecondsLeft(60);
+      setRulesAccepted(false);
+      setQuizAnswers({});
+      setPracticeResponses({});
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Typing test could not be started");
+    } finally {
+      setStarting(false);
+    }
+  };
+
+  const submitAssessment = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!token || !data || !attempt) return;
+    if (secondsLeft > 0) return setNotice("Complete the 60-second typing test before submitting.");
+    if (!rulesAccepted) return setNotice("Confirm that you have read and agree to follow the operator rules.");
+    if (data.quiz.some((question) => !quizAnswers[question.id])) return setNotice("Answer every safety and communication question.");
+    if (data.scenarios.some((scenario) => (practiceResponses[scenario.id] || "").replace(/\s/g, "").length < data.thresholds.replyCharacters)) {
+      return setNotice(`Each practice reply must contain at least ${data.thresholds.replyCharacters} non-whitespace characters.`);
+    }
+    setSubmitting(true);
+    setNotice("");
+    try {
+      const response = await authFetch(token, `/api/chatmodz/training/${attempt.id}/submit`, {
+        method: "POST",
+        body: JSON.stringify({ typedText, answers: quizAnswers, practiceResponses, rulesAccepted }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || "Assessment could not be submitted");
+      setNotice(result.message || "Assessment submitted.");
+      setAttempt(null);
+      setTypedText("");
+      await load();
+      await refreshUser();
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Assessment could not be submitted");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const status = data?.assessment?.status || "not_started";
+  const awaitingReview = status === "submitted" && Boolean(data?.assessment?.auto_passed);
+  const rejected = status === "rejected";
+
+  if (loading) return <div className="auth-loading"><RefreshCw className="spin" size={24} /><span>Loading operator training…</span></div>;
+  if (!data) return <Shell><div className="page"><div className="empty-state panel"><AlertTriangle size={28} /><strong>Training is temporarily unavailable</strong><span>{notice || "The training service could not be reached."}</span><button className="button amber" onClick={load}>Try again</button></div></div></Shell>;
+
+  return <Shell><div className="page training-page">
+    <div className="page-head"><div><div className="eyebrow">Operator onboarding / required assessment</div><h1 className="page-title">Training before live chats</h1><p className="page-subtitle">Complete the typing test, safety quiz, and practice chats. A recruiter or administrator must approve your results before live conversations unlock.</p></div><StatusPill type={awaitingReview ? "pending" : status === "approved" ? "active" : "training"}>{awaitingReview ? "Awaiting human review" : status.replace("_", " ")}</StatusPill></div>
+    {notice && <div className="training-notice" role="status"><AlertTriangle size={16} />{notice}</div>}
+    {status === "approved" ? <section className="panel training-result success-result"><ShieldCheck size={24} /><div><strong>Training approved</strong><p>Your recruiter or administrator has approved your assessment. Your live operator access is being refreshed.</p></div></section> : awaitingReview ? <section className="panel training-result"><Clock3 size={24} /><div><strong>Automatic checks passed — review pending</strong><p>Your typing and quiz results passed. Live chats stay locked until an authorized reviewer checks your practice responses.</p></div></section> : rejected ? <section className="panel training-result"><AlertTriangle size={24} /><div><strong>Practice chats need another review</strong><p>{data.assessment?.reviewer_note || "Review the rules and try the assessments again."}</p></div></section> : null}
+    {data.assessment && status !== "in_progress" && <section className="training-score-strip"><div><span>Latest typing speed</span><strong>{data.assessment.typing_wpm ?? "—"} WPM</strong></div><div><span>Typing accuracy</span><strong>{data.assessment.typing_accuracy ?? "—"}%</strong></div><div><span>Safety quiz</span><strong>{data.assessment.quiz_score ?? "—"}%</strong></div><div><span>Automatic result</span><strong>{data.assessment.auto_passed ? "Passed" : "Retake required"}</strong></div></section>}
+    <form className="training-layout" onSubmit={submitAssessment}>
+      <section className="panel training-section">
+        <div className="training-section-head"><span className="training-step">01</span><div><h2>Communication and safety rules</h2><p>Read all rules. Your acknowledgment is saved with your test attempt and policy version.</p></div></div>
+        <div className="training-rules">{data.policies.map((policy) => <article key={policy.title}><strong>{policy.title}</strong><p>{policy.detail}</p></article>)}</div>
+        <label className="training-ack"><input type="checkbox" checked={rulesAccepted} onChange={(event) => setRulesAccepted(event.target.checked)} /><span>I have read and agree to follow these rules, including using Panic Room only for the listed severe safety issues.</span></label>
+        <small className="tiny-text">Rules version {data.policyVersion}</small>
+      </section>
+
+      <section className="panel training-section">
+        <div className="training-section-head"><span className="training-step">02</span><div><h2>Typing speed</h2><p>Type the displayed passage as accurately as you can. The minimum is {data.thresholds.typingWpm} WPM with at least {data.thresholds.typingAccuracy}% accuracy.</p></div></div>
+        {!attempt ? awaitingReview ? <div className="typing-start"><p>Your automatic checks passed. Do not retake the assessment while a recruiter or administrator reviews your practice replies.</p></div> : <div className="typing-start"><p>Each attempt lasts 60 seconds. WPM and accuracy update while you type. Pasting into the test is disabled.</p><button className="button amber" type="button" onClick={startTypingTest} disabled={starting}>{starting ? "Starting…" : "Start 60-second typing test"} <ChevronRight size={14} /></button></div> : <>
+          <div className="typing-live-stats"><div><span>Time left</span><strong>{secondsLeft}s</strong></div><div><span>Live speed</span><strong>{liveWpm} WPM</strong></div><div><span>Accuracy</span><strong>{liveAccuracy}%</strong></div><div><span>Typed</span><strong>{typedText.length} chars</strong></div></div>
+          <div className="typing-passage">{attempt.passage}</div>
+          <textarea className="form-field typing-input" value={typedText} onChange={(event) => setTypedText(event.target.value.slice(0, attempt.passage.length))} onPaste={(event) => event.preventDefault()} onDrop={(event) => event.preventDefault()} onContextMenu={(event) => event.preventDefault()} disabled={secondsLeft === 0} autoFocus placeholder="Click here and type the passage…" aria-label="Typing speed test" />
+          {secondsLeft === 0 && <small className="tiny-text">Typing time is complete. Your final WPM and accuracy will be calculated when you submit.</small>}
+        </>}
+      </section>
+
+      <section className="panel training-section">
+        <div className="training-section-head"><span className="training-step">03</span><div><h2>Safety knowledge check</h2><p>Choose the safest response. You need {data.thresholds.quizScore}% correct; every critical safety item must be correct.</p></div></div>
+        <div className="training-quiz">{data.quiz.map((question, index) => <fieldset key={question.id} className="quiz-question"><legend>{index + 1}. {question.prompt}</legend>{question.options.map((option) => <label key={option.id} className="quiz-option"><input type="radio" name={question.id} value={option.id} checked={quizAnswers[question.id] === option.id} onChange={() => setQuizAnswers((current) => ({ ...current, [question.id]: option.id }))} /><span>{option.text}</span></label>)}</fieldset>)}</div>
+      </section>
+
+      <section className="panel training-section">
+        <div className="training-section-head"><span className="training-step">04</span><div><h2>Practice chats</h2><p>Reply in your own words. Each reply needs at least {data.thresholds.replyCharacters} characters; reviewers will check these before approving live access.</p></div></div>
+        <div className="practice-list">{data.scenarios.map((scenario, index) => <article key={scenario.id} className="practice-chat"><div className="practice-label">Test chat {index + 1} · simulated only</div><div className="practice-member-message">{scenario.memberMessage}</div><label htmlFor={`practice-${scenario.id}`}>Your reply</label><textarea id={`practice-${scenario.id}`} className="form-field practice-input" value={practiceResponses[scenario.id] || ""} onChange={(event) => setPracticeResponses((current) => ({ ...current, [scenario.id]: event.target.value }))} maxLength={2000} minLength={data.thresholds.replyCharacters} placeholder="Write an original, safe response that answers the message and keeps the conversation on-platform." /><div className="practice-count"><span>{(practiceResponses[scenario.id] || "").replace(/\s/g, "").length}/{data.thresholds.replyCharacters} non-whitespace characters</span><span>Reviewed before live access</span></div></article>)}</div>
+      </section>
+      <div className="training-submit-row"><div><strong>Live chats remain locked until human approval.</strong><span>Failed automatic checks can be retaken. Passed checks still require reviewer approval.</span></div><button className="button primary" type="submit" disabled={!attempt || secondsLeft > 0 || submitting || !rulesAccepted}>{submitting ? "Submitting…" : "Submit assessment"} <ChevronRight size={15} /></button></div>
+    </form>
+    <Toast message={notice} />
   </div></Shell>;
 }
 
@@ -652,9 +857,14 @@ function ConversationPage({ inline = false, embeddedKey = "" }: { inline?: boole
   const { conversations, reload } = useModeratorData();
   const selectedFromQueue = conversations.find((conversation) => conversation.key === (embeddedKey || params.id));
   const [conversationSnapshot, setConversationSnapshot] = useState<Conversation | null>(null);
+  const [clockNow, setClockNow] = useState(Date.now());
   useEffect(() => {
     if (selectedFromQueue) setConversationSnapshot(selectedFromQueue);
   }, [selectedFromQueue]);
+  useEffect(() => {
+    const timer = window.setInterval(() => setClockNow(Date.now()), 15000);
+    return () => window.clearInterval(timer);
+  }, []);
   const selected = selectedFromQueue || conversationSnapshot;
   const [messages, setMessages] = useState<Message[]>([]);
   const [users, setUsers] = useState<Record<string, ConvUser>>({});
@@ -664,6 +874,9 @@ function ConversationPage({ inline = false, embeddedKey = "" }: { inline?: boole
   const [notes, setNotes] = useState<ConversationNotes>({ text: "", updatedAt: null, updatedByName: null });
   const [savedNotes, setSavedNotes] = useState("");
   const [savingNotes, setSavingNotes] = useState(false);
+  const [panicCategory, setPanicCategory] = useState("underage");
+  const [panicDetails, setPanicDetails] = useState("");
+  const [panicSubmitting, setPanicSubmitting] = useState(false);
   const [notice, setNotice] = useState("");
   const [loading, setLoading] = useState(Boolean(selected));
   const [sending, setSending] = useState(false);
@@ -673,7 +886,8 @@ function ConversationPage({ inline = false, embeddedKey = "" }: { inline?: boole
   const lockedByMe = selected?.lock?.moderatorId === user?.id;
   const isAdmin = user?.role === "admin" || (user?.admin ?? 0) >= 2;
   const meaningful = countMeaningfulChars(draft);
-  const canSend = Boolean(selected && lockedByMe && (draft.trim() || media) && (isAdmin || meaningful >= MIN_REPLY_CHARS));
+  const minutesSinceMemberMessage = selected?.lastTime ? Math.max(0, Math.floor((clockNow - selected.lastTime * 1000) / 60000)) : 0;
+  const canSend = Boolean(selected && lockedByMe && (draft.trim() || media) && meaningful >= MIN_REPLY_CHARS);
 
   const conversationKey = selected?.key;
   const loadMessages = useCallback(async () => {
@@ -743,6 +957,26 @@ function ConversationPage({ inline = false, embeddedKey = "" }: { inline?: boole
       setSavingNotes(false);
     }
   };
+  const submitPanicRoom = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!selected || !token || !lockedByMe) return;
+    setPanicSubmitting(true);
+    try {
+      const response = await authFetch(token, `/api/chatmodz/conversations/${selected.key}/panic-room`, {
+        method: "POST",
+        body: JSON.stringify({ category: panicCategory, details: panicDetails }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || "Safety escalation could not be recorded");
+      setPanicDetails("");
+      notify("Safety report sent to recruiter and administrator review");
+      await reload();
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Safety escalation could not be recorded");
+    } finally {
+      setPanicSubmitting(false);
+    }
+  };
   const handleFile = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     event.target.value = "";
@@ -775,7 +1009,7 @@ function ConversationPage({ inline = false, embeddedKey = "" }: { inline?: boole
       setDraft("");
       if (media) { URL.revokeObjectURL(media.preview); setMedia(null); }
       await reload();
-      notify("Reply delivered to the connected site");
+      notify(data.late ? "Reply delivered late and recorded for review" : "Reply delivered to the connected site");
     } catch (error) {
       notify(error instanceof Error ? error.message : "Reply failed");
     } finally {
@@ -788,10 +1022,13 @@ function ConversationPage({ inline = false, embeddedKey = "" }: { inline?: boole
   };
   const content = <div className={inline ? "inline-conversation" : "page"}>
      {!inline && <div className="page-head conversation-page-head"><button className="button ghost compact" onClick={() => setLocation("/")}><ChevronLeft size={13} /> Queue</button><div className="tiny-text mono">Live conversation · {selected.key}</div></div>}
+    <details className="live-rule-reminder"><summary><ShieldCheck size={15} /> Operator rules for live replies <ChevronDown size={14} /></summary><div className="live-rule-grid"><span>Write a fresh reply; do not reuse identical text.</span><span>At least 75 non-whitespace characters.</span><span>Answer the member and ask a relevant follow-up question.</span><span>Reply within 25 minutes; late replies are recorded.</span><span>Keep contact on-platform; never share phone, email, or social accounts.</span><span>Never arrange meetings or say “I love you.”</span><span>Do not initiate sexual conversation or discuss illegal activity.</span><span>Panic Room is only for underage, illegal acts, suicidal intent with means, or persistent racism/hate.</span></div></details>
+    {minutesSinceMemberMessage > 0 && <div className={`reply-time-banner ${minutesSinceMemberMessage >= 25 ? "late" : ""}`}><Clock3 size={14} />{minutesSinceMemberMessage >= 25 ? `This member message is ${minutesSinceMemberMessage} minutes old. A late reply will be recorded for review.` : `Reply within 25 minutes — about ${25 - minutesSinceMemberMessage} minutes remaining.`}</div>}
+    <details className="panic-room-panel"><summary><AlertTriangle size={15} /> Panic Room — severe safety issue only <ChevronDown size={14} /></summary><form className="panic-room-form" onSubmit={submitPanicRoom}><p>Use only for a suspected underage user, illegal acts, suicidal intent with means, or persistent racism/hate. Do not use for routine disagreements.</p><label htmlFor="panicCategory">Safety category</label><select id="panicCategory" className="form-field" value={panicCategory} onChange={(event) => setPanicCategory(event.target.value)}><option value="underage">Suspected underage user</option><option value="illegal_activity">Illegal acts</option><option value="suicidal_intent_with_means">Suicidal intent with means</option><option value="persistent_racism">Persistent racism or hate</option></select><label htmlFor="panicDetails">Brief factual context (optional)</label><textarea id="panicDetails" className="form-field" value={panicDetails} onChange={(event) => setPanicDetails(event.target.value)} maxLength={1000} placeholder="Include only the minimum information needed for a reviewer."/><button className="button danger compact" type="submit" disabled={!lockedByMe || panicSubmitting}>{panicSubmitting ? "Sending report…" : "Send to recruiter and admin"}</button>{!lockedByMe && <small className="tiny-text">Lock this conversation before reporting.</small>}</form></details>
     <div className="conversation-layout">
        <section className="panel conversation-main"><div className="conversation-top"><div className="conversation-identity"><div className="avatar-stack large"><Avatar photo={selected.fakeUser.photo} name={selected.fakeUser.name} size={44} /><Avatar photo={selected.realUser.photo} name={selected.realUser.name} size={26} /></div><div><h2>{selected.fakeUser.name} <span className="arrow-muted">→</span> {selected.realUser.name}</h2><small>Conversation context and message history</small></div></div><div className="conversation-actions">{selected.lock && <StatusPill type={lockedByMe ? "active" : "pending"}>{lockedByMe ? "Locked by you" : "Locked"}</StatusPill>}<button className={`button compact ${lockedByMe ? "ghost" : "amber"}`} onClick={toggleLock} disabled={locking || (selected.lock !== null && !lockedByMe)}>{lockedByMe ? <><UnlockKeyhole size={13} /> Release</> : <><LockKeyhole size={13} /> Lock to me</>}</button></div></div>
          <div className="messages" ref={messagesRef}>{loading ? <div className="empty-state"><RefreshCw className="spin" size={24} /><strong>Loading messages</strong></div> : messages.length ? messages.map((message, index) => { const byFake = message.senderType === "managed_profile" || message.u1 === selected.fakeUser.id; const sender = users[String(message.u1)] || (byFake ? selected.fakeUser : selected.realUser); return <div key={message.id} className={`message ${byFake ? "operator" : "member"}`}><Avatar photo={sender.photo} name={sender.name} size={27} /><div><div className="bubble">{message.mediaUrl && <MediaBubble message={message} />}{message.message && <p>{message.message}</p>}<div className="message-meta">{timeAgo(message.time)} {index === messages.length - 1 && <strong>{byFake ? "Waiting for member" : "Needs reply"}</strong>}</div></div></div></div>; }) : <div className="empty-state"><MessageSquare size={25} /><strong>No messages in this conversation</strong><span>The connected source returned an empty thread.</span></div>}</div>
-        <div className="composer">{suggestions.length > 0 && <div className="canned-row">{suggestions.map((suggestion) => <button key={suggestion} className="canned" onClick={() => setDraft(suggestion)}>{suggestion}</button>)}</div>}{media && <div className="media-pending"><span>{media.type} attached</span><button className="icon-button" onClick={() => { URL.revokeObjectURL(media.preview); setMedia(null); }} aria-label="Remove attachment"><X size={14} /></button></div>}<div className="composer-row"><textarea value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={keyDown} onCopy={(event) => { if (!isAdmin) event.preventDefault(); }} onCut={(event) => { if (!isAdmin) event.preventDefault(); }} onPaste={(event) => { if (!isAdmin) event.preventDefault(); }} onDrop={(event) => { if (!isAdmin) event.preventDefault(); }} placeholder={lockedByMe ? "Write a thoughtful reply…" : "Lock this conversation before replying"} disabled={!lockedByMe || sending} aria-label="Reply message" /><div className="composer-tools"><input ref={inputRef} type="file" accept="image/*,video/*,audio/*" hidden onChange={handleFile} /><button className="icon-button" onClick={() => inputRef.current?.click()} disabled={!lockedByMe || sending} aria-label="Attach media"><Paperclip size={16} /></button><button className="button primary" onClick={send} disabled={!canSend || sending}><Send size={14} /> {sending ? "Sending…" : "Send"}</button></div></div><div className={`reply-counter ${!isAdmin && meaningful > 0 && meaningful < MIN_REPLY_CHARS ? "short" : ""}`}>{isAdmin ? "Administrator override enabled" : `${meaningful}/${MIN_REPLY_CHARS} non-space characters required`} · Enter to send, Shift+Enter for a new line</div></div>
+        <div className="composer">{suggestions.length > 0 && <div className="canned-row">{suggestions.map((suggestion) => <button key={suggestion} className="canned" onClick={() => setDraft(suggestion)}>{suggestion}</button>)}</div>}{media && <div className="media-pending"><span>{media.type} attached</span><button className="icon-button" onClick={() => { URL.revokeObjectURL(media.preview); setMedia(null); }} aria-label="Remove attachment"><X size={14} /></button></div>}<div className="composer-row"><textarea value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={keyDown} onCopy={(event) => { if (!isAdmin) event.preventDefault(); }} onCut={(event) => { if (!isAdmin) event.preventDefault(); }} onPaste={(event) => { if (!isAdmin) event.preventDefault(); }} onDrop={(event) => { if (!isAdmin) event.preventDefault(); }} placeholder={lockedByMe ? "Write a thoughtful reply…" : "Lock this conversation before replying"} disabled={!lockedByMe || sending} aria-label="Reply message" /><div className="composer-tools"><input ref={inputRef} type="file" accept="image/*,video/*,audio/*" hidden onChange={handleFile} /><button className="icon-button" onClick={() => inputRef.current?.click()} disabled={!lockedByMe || sending} aria-label="Attach media"><Paperclip size={16} /></button><button className="button primary" onClick={send} disabled={!canSend || sending}><Send size={14} /> {sending ? "Sending…" : "Send"}</button></div></div><div className={`reply-counter ${meaningful > 0 && meaningful < MIN_REPLY_CHARS ? "short" : ""}`}>{`${meaningful}/${MIN_REPLY_CHARS} non-space characters required`} · Include a relevant follow-up question · Enter to send, Shift+Enter for a new line</div></div>
       </section>
         <aside className="panel conversation-side"><div className="side-section profile-section"><div className="side-title">People in this chat</div><div className="profile-stack"><ProfileCard profileUser={users["-1"] || selected.fakeUser} tone="managed" /><ProfileCard profileUser={users["-2"] || selected.realUser} tone="member" /></div></div><div className="side-section"><div className="side-title">Conversation details</div><div className="detail-line"><span>Latest activity</span><span>{timeAgo(selected.lastTime)}</span></div><div className="detail-line"><span>Messages</span><span>{selected.msgCount}</span></div><div className="detail-line"><span>Assignment</span><span>{lockedByMe ? "You" : selected.lock ? selected.lock.moderatorName : "Available"}</span></div></div><div className="side-section shared-notes"><div className="side-title">Shared operator notes</div><p className="tiny-text notes-help">Private to operators. Record what was discussed, promised, or already provided so the next operator can continue naturally.</p><textarea className="form-field notes-field" value={notes.text} maxLength={5000} onChange={(event) => setNotes((current) => ({ ...current, text: event.target.value }))} placeholder={lockedByMe ? "What did the user ask for? What was promised or already given?" : "Lock this conversation to view and update notes"} disabled={!lockedByMe || savingNotes} aria-label="Shared operator notes" /><div className="notes-actions"><span className="tiny-text">{notes.text.length}/5000</span><button className="button amber compact" onClick={saveNotes} disabled={!lockedByMe || savingNotes || notes.text === savedNotes}>{savingNotes ? "Saving…" : "Save notes"}</button></div>{notes.updatedAt && <span className="tiny-text notes-updated">Updated by {notes.updatedByName || "an operator"} · {new Date(notes.updatedAt).toLocaleString()}</span>}</div><div className="side-section"><div className="side-title">Reply quality</div><div className="notice"><ShieldCheck size={13} /> Keep replies warm, direct, and personal.</div></div><div className="side-section"><div className="side-title">Lock policy</div><div className="tiny-text"><Clock3 size={13} style={{ verticalAlign: "middle", marginRight: 5 }} /> Locks last 10 minutes and are renewed while this conversation is open.</div></div></aside>
     </div><Toast message={notice} />
@@ -1367,6 +1604,160 @@ function AdminPage() {
   </Shell>;
 }
 
+type AssessmentReviewRow = {
+  id?: number;
+  operator_id: number;
+  operator_name: string;
+  operator_email: string;
+  operator_status: string;
+  recruiter_name?: string | null;
+  status: string;
+  auto_passed?: boolean;
+  typing_wpm?: number | null;
+  typing_accuracy?: number | null;
+  quiz_score?: number | null;
+  practice_responses_json?: Record<string, string> | null;
+  policy_version?: string | null;
+  rules_acknowledged_at?: string | null;
+  reviewer_note?: string | null;
+  reviewed_by_name?: string | null;
+  reviewed_at?: string | null;
+  submitted_at?: string | null;
+};
+
+type SafetyEscalationRow = {
+  id: number;
+  operator_name: string;
+  member_alias?: string;
+  managed_profile_alias?: string;
+  category: string;
+  details?: string | null;
+  status: string;
+  created_at: string;
+  reviewed_by_name?: string | null;
+  reviewed_at?: string | null;
+};
+
+type LateReplyRow = {
+  id: number;
+  operator_id: number;
+  operator_name: string;
+  member_alias?: string;
+  managed_profile_alias?: string;
+  conversation_id: number;
+  minutes_waited: number;
+  created_at: string;
+};
+
+function OperatorReviewsPage() {
+  const { token, user } = useSession();
+  const [tab, setTab] = useState<"assessments" | "safety">("assessments");
+  const [assessments, setAssessments] = useState<AssessmentReviewRow[]>([]);
+  const [escalations, setEscalations] = useState<SafetyEscalationRow[]>([]);
+  const [lateReplies, setLateReplies] = useState<LateReplyRow[]>([]);
+  const [reviewNotes, setReviewNotes] = useState<Record<number, string>>({});
+  const [loading, setLoading] = useState(true);
+  const [notice, setNotice] = useState("");
+  const isReviewer = user?.role === "admin" || user?.role === "recruiter";
+
+  const load = useCallback(async () => {
+    if (!token || !isReviewer) return;
+    setLoading(true);
+    try {
+      if (tab === "assessments") {
+        const response = await authFetch(token, "/api/chatmodz/assessments");
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(result.error || "Assessment results could not be loaded");
+        setAssessments(result.assessments || []);
+      } else {
+        const [safetyResponse, lateResponse] = await Promise.all([
+          authFetch(token, "/api/chatmodz/safety-escalations"),
+          authFetch(token, "/api/chatmodz/late-replies"),
+        ]);
+        const [safetyData, lateData] = await Promise.all([
+          safetyResponse.json().catch(() => ({})),
+          lateResponse.json().catch(() => ({})),
+        ]);
+        if (!safetyResponse.ok || !lateResponse.ok) throw new Error(safetyData.error || lateData.error || "Safety review data could not be loaded");
+        setEscalations(safetyData.escalations || []);
+        setLateReplies(lateData.lateReplies || []);
+      }
+      setNotice("");
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Review data could not be loaded");
+    } finally {
+      setLoading(false);
+    }
+  }, [token, tab, isReviewer]);
+
+  useEffect(() => { void load(); }, [load]);
+
+  const decide = async (assessmentId: number, decision: "approve" | "reject") => {
+    if (!token) return;
+    try {
+      const response = await authFetch(token, `/api/chatmodz/assessments/${assessmentId}/decision`, {
+        method: "POST",
+        body: JSON.stringify({ decision, reviewerNote: reviewNotes[assessmentId] || "" }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || "Assessment decision could not be saved");
+      setNotice(decision === "approve" ? "Operator approved and live access enabled." : "Assessment declined. The operator can retake training.");
+      await load();
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Assessment decision could not be saved");
+    }
+  };
+
+  const updateEscalation = async (id: number, status: "reviewed" | "resolved") => {
+    if (!token) return;
+    try {
+      const response = await authFetch(token, `/api/chatmodz/safety-escalations/${id}/status`, { method: "POST", body: JSON.stringify({ status }) });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || "Safety report could not be updated");
+      setNotice(`Safety report marked ${status}.`);
+      await load();
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Safety report could not be updated");
+    }
+  };
+
+  if (!isReviewer) return <Shell><div className="page"><div className="empty-state panel"><AlertTriangle size={28} /><strong>Reviewer access required</strong><span>Only recruiters and administrators can review tests or safety reports.</span></div></div></Shell>;
+  return <Shell><div className="page review-page">
+    <div className="page-head"><div><div className="eyebrow">Recruiter and administrator review</div><h1 className="page-title">Operator tests and safety</h1><p className="page-subtitle">Review practice chats before granting live access. Safety reports are restricted to severe incidents.</p></div><button className="button ghost compact" onClick={() => void load()} disabled={loading}><RefreshCw size={13} /> Refresh</button></div>
+    <div className="admin-tabs">
+      <button className={`filter-button ${tab === "assessments" ? "selected" : ""}`} onClick={() => setTab("assessments")}><ClipboardCheck size={13} /> Operator assessments</button>
+      <button className={`filter-button ${tab === "safety" ? "selected" : ""}`} onClick={() => setTab("safety")}><ShieldCheck size={13} /> Safety and late replies</button>
+    </div>
+    {notice && <div className="training-notice" role="status"><AlertTriangle size={16} />{notice}</div>}
+    {loading ? <div className="empty-state panel"><RefreshCw className="spin" size={24} /><strong>Loading review queue</strong></div> : tab === "assessments" ? <div className="review-list">
+      {assessments.length ? assessments.map((assessment) => {
+        const responses = assessment.practice_responses_json || {};
+        const canReview = assessment.status === "submitted" && Boolean(assessment.auto_passed) && Boolean(assessment.id);
+        return <article className="panel review-card" key={`${assessment.operator_id}-${assessment.id || "none"}`}>
+          <div className="review-card-head"><div><strong>{assessment.operator_name}</strong><span>{assessment.operator_email}{assessment.recruiter_name ? ` · Recruiter: ${assessment.recruiter_name}` : ""}</span></div><StatusPill type={assessment.status === "approved" ? "active" : assessment.status === "rejected" ? "rejected" : assessment.status === "submitted" ? "pending" : "training"}>{assessment.status.replace("_", " ")}</StatusPill></div>
+          <div className="review-score-grid"><div><span>Typing</span><strong>{assessment.typing_wpm ?? "—"} WPM</strong><small>{assessment.typing_wpm != null && assessment.typing_wpm >= 40 ? "Pass" : "Needs 40 WPM"}</small></div><div><span>Accuracy</span><strong>{assessment.typing_accuracy ?? "—"}%</strong><small>{assessment.typing_accuracy != null && assessment.typing_accuracy >= 90 ? "Pass" : "Needs 90%"}</small></div><div><span>Safety quiz</span><strong>{assessment.quiz_score ?? "—"}%</strong><small>{assessment.quiz_score != null && assessment.quiz_score >= 80 ? "Score passed; critical answer also checked" : "Needs 80%"}</small></div><div><span>Rule acknowledgment</span><strong>{assessment.policy_version || "Not recorded"}</strong><small>{assessment.rules_acknowledged_at ? new Date(assessment.rules_acknowledged_at).toLocaleString() : "Not acknowledged"}</small></div></div>
+          <div className="review-practice-list"><strong>Practice chat replies</strong>{Object.keys(responses).length ? Object.entries(responses).map(([scenario, response]) => <div className="review-response" key={scenario}><span>{scenario.replace("_", " ")}</span><p>{response}</p></div>) : <p className="tiny-text">No practice responses submitted.</p>}</div>
+          {assessment.reviewer_note && <p className="reviewer-feedback"><strong>Previous reviewer note:</strong> {assessment.reviewer_note}</p>}
+          {assessment.reviewed_by_name && <small className="tiny-text">Reviewed by {assessment.reviewed_by_name}{assessment.reviewed_at ? ` · ${new Date(assessment.reviewed_at).toLocaleString()}` : ""}</small>}
+          {assessment.status === "submitted" && <div className="review-action-row"><textarea className="form-field reviewer-note-input" value={assessment.id ? reviewNotes[assessment.id] || "" : ""} onChange={(event) => assessment.id && setReviewNotes((current) => ({ ...current, [assessment.id!]: event.target.value }))} maxLength={1000} placeholder="Optional reviewer feedback for the operator" /><div className="inline-actions"><button className="button danger compact" onClick={() => assessment.id && void decide(assessment.id, "reject")}>Decline / retest</button><button className="button amber compact" onClick={() => assessment.id && void decide(assessment.id, "approve")} disabled={!canReview}>Approve live access</button></div>{!assessment.auto_passed && <small className="tiny-text">Automatic checks did not pass. Approval is disabled; the operator can retake the test.</small>}</div>}
+        </article>;
+      }) : <div className="empty-state panel"><ClipboardCheck size={26} /><strong>No operators are assigned to this review view</strong><span>Assessment results will appear here when your operators submit training.</span></div>}
+    </div> : <div className="review-list">
+      <section className="panel safety-summary"><ShieldCheck size={20} /><div><strong>Panic Room is for severe safety incidents only.</strong><span>Review underage concerns, illegal acts, suicidal intent with means, and persistent racism or hate. Routine disagreements do not qualify.</span></div></section>
+      {escalations.length ? escalations.map((escalation) => <article className="panel review-card safety-report" key={escalation.id}>
+        <div className="review-card-head"><div><strong>{escalation.category.replaceAll("_", " ")}</strong><span>Reported by {escalation.operator_name}{escalation.member_alias ? ` · Chat: ${escalation.member_alias}` : ""} · {new Date(escalation.created_at).toLocaleString()}</span></div><StatusPill type={escalation.status === "open" ? "urgent" : "active"}>{escalation.status}</StatusPill></div>
+        {escalation.details && <p className="review-response">{escalation.details}</p>}
+        {escalation.reviewed_by_name && <small className="tiny-text">Reviewed by {escalation.reviewed_by_name}</small>}
+        {escalation.status === "open" && <div className="inline-actions"><button className="button ghost compact" onClick={() => void updateEscalation(escalation.id, "reviewed")}>Mark reviewed</button><button className="button amber compact" onClick={() => void updateEscalation(escalation.id, "resolved")}>Resolve report</button></div>}
+      </article>) : <div className="empty-state panel"><ShieldCheck size={26} /><strong>No safety reports are waiting</strong><span>Only the approved severe categories can be sent to Panic Room.</span></div>}
+      <section className="late-reply-section"><div className="panel-head"><div><div className="panel-title">Replies outside the 25-minute window</div><div className="panel-kicker">Late replies from the last 90 days, recorded for follow-up.</div></div><Clock3 size={17} /></div>
+        {lateReplies.length ? lateReplies.map((reply) => <article className="panel late-reply-card" key={reply.id}><div><strong>{reply.operator_name}</strong><span>{reply.member_alias || "Conversation"}{reply.managed_profile_alias ? ` · ${reply.managed_profile_alias}` : ""}</span></div><div className="late-reply-meta"><StatusPill type="urgent">{reply.minutes_waited} min</StatusPill><span>{new Date(reply.created_at).toLocaleString()}</span></div></article>) : <div className="empty-state panel"><Clock3 size={23} /><strong>No late replies are recorded</strong><span>Replies sent after 25 minutes appear here for review.</span></div>}
+      </section>
+    </div>}
+    <Toast message={notice} />
+  </div></Shell>;
+}
+
 function HomePage() {
   const { user } = useSession();
   return user?.role === "recruiter" ? <RecruiterPage /> : <QueuePage />;
@@ -1381,7 +1772,9 @@ function AuthenticatedRouter() {
   const [location] = useLocation();
   if (loading) return <div className="auth-loading"><RefreshCw className="spin" size={24} /><span>Checking secure session…</span></div>;
   if (!user) return <Switch><Route path="/login" component={LoginPage} /><Route path="/activate" component={ActivationPage} /><Route path="/apply" component={ApplyPage} /><Route path="/welcome" component={LandingPage} /><Route component={LandingPage} /></Switch>;
-  return <ErrorBoundary resetKey={location}><Switch><Route path="/" component={HomePage} /><Route path="/earnings" component={EarningsPage} /><Route path="/conversation/:id" component={ConversationRoute} /><Route path="/reports" component={ReportsPage} /><Route path="/recruiter" component={RecruiterPage} /><Route path="/admin" component={AdminPage} /><Route path="/settings" component={SettingsPage} /><Route component={NotFound} /></Switch></ErrorBoundary>;
+  if (user.role === "operator" && (user.status !== "active" || user.assessmentStatus !== "approved")) return <ErrorBoundary resetKey={location}><TrainingPage /></ErrorBoundary>;
+  if (user.role === "operator" && location === "/training") return <QueuePage />;
+  return <ErrorBoundary resetKey={location}><Switch><Route path="/" component={HomePage} /><Route path="/earnings" component={EarningsPage} /><Route path="/conversation/:id" component={ConversationRoute} /><Route path="/reports" component={ReportsPage} /><Route path="/recruiter" component={RecruiterPage} /><Route path="/reviews" component={OperatorReviewsPage} /><Route path="/admin" component={AdminPage} /><Route path="/settings" component={SettingsPage} /><Route component={NotFound} /></Switch></ErrorBoundary>;
 }
 
 function App() {

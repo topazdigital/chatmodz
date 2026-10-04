@@ -7,8 +7,13 @@ import webpush from "web-push"
 
 const router = Router()
 const LOCK_MINUTES = 10
-const MIN_REPLY_CHARS = 20
+const MIN_REPLY_CHARS = 75
 const MAX_OPERATOR_NOTES = 5000
+const MIN_TYPING_TEST_SECONDS = 60
+const MIN_TYPING_WPM = 40
+const MIN_TYPING_ACCURACY = 90
+const MIN_QUIZ_SCORE = 80
+const POLICY_VERSION = "2026-10-05"
 const SIGNATURE_WINDOW_MS = 5 * 60 * 1000
 const MAX_PROFILE_PHOTO_BYTES = 5 * 1024 * 1024
 const MAX_PROFILE_GALLERY_ITEMS = 8
@@ -29,6 +34,9 @@ type Operator = {
   email: string
   role: "operator" | "recruiter" | "admin"
   status: string
+  assessment_status?: string | null
+  recruiter_id?: number | null
+  recruiter_name?: string | null
 }
 
 class AdminActionError extends Error {
@@ -50,6 +58,8 @@ const lastActiveTouch = new Map<number, number>()
 const LAST_ACTIVE_TOUCH_INTERVAL_MS = 60_000
 const demoApplications: any[] = []
 const demoConversationNotes = new Map<number, { text: string; updatedAt: string | null; updatedByName: string | null }>()
+const demoAssessmentAttempts = new Map<number, any[]>()
+const demoSafetyEscalations: any[] = []
 const demoLevels = [
   { id: 1, name: "Beginner", slug: "beginner", description: "New operators building consistency and learning the workflow.", rate_minor: 5, currency: "EUR", is_default: true, active: true, assigned_operators: 1 },
   { id: 2, name: "Developing", slug: "developing", description: "Operators who meet quality and reliability expectations.", rate_minor: 10, currency: "EUR", is_default: false, active: true, assigned_operators: 0 },
@@ -90,7 +100,10 @@ function demoOperator(role: "admin" | "recruiter" | "operator" = "admin"): Opera
         ? String(process.env.CHATMODZ_DEMO_RECRUITER_EMAIL || "recruiter@chatmodz.test").trim().toLowerCase()
         : String(process.env.CHATMODZ_DEMO_OPERATOR_EMAIL || "operator@chatmodz.test").trim().toLowerCase(),
     role,
-    status: "active",
+    status: role === "operator" ? "training" : "active",
+    assessment_status: null,
+    recruiter_id: role === "operator" ? 3 : null,
+    recruiter_name: role === "operator" ? "Demo Recruiter" : null,
   }
 }
 
@@ -181,6 +194,58 @@ async function ensureConversationColumns() {
   }
 }
 
+async function ensureAssessmentTables() {
+  await query(`
+    CREATE TABLE IF NOT EXISTS operator_assessments (
+      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+      operator_id BIGINT UNSIGNED NOT NULL,
+      status ENUM('in_progress', 'submitted', 'approved', 'rejected') NOT NULL DEFAULT 'in_progress',
+      passage_id TINYINT UNSIGNED NOT NULL,
+      typed_text MEDIUMTEXT NULL,
+      typing_wpm DECIMAL(6,2) NULL,
+      typing_accuracy DECIMAL(5,2) NULL,
+      quiz_answers_json JSON NULL,
+      quiz_score DECIMAL(5,2) NULL,
+      practice_responses_json JSON NULL,
+      policy_version VARCHAR(32) NULL,
+      rules_acknowledged_at TIMESTAMP NULL,
+      auto_passed BOOLEAN NOT NULL DEFAULT FALSE,
+      reviewer_note VARCHAR(1000) NULL,
+      started_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+      submitted_at TIMESTAMP NULL,
+      reviewed_by BIGINT UNSIGNED NULL,
+      reviewed_at TIMESTAMP NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (id),
+      KEY assessments_operator_latest_idx (operator_id, id),
+      KEY assessments_review_idx (status, auto_passed, submitted_at),
+      CONSTRAINT assessments_operator_fk FOREIGN KEY (operator_id) REFERENCES operators (id) ON DELETE CASCADE,
+      CONSTRAINT assessments_reviewer_fk FOREIGN KEY (reviewed_by) REFERENCES operators (id) ON DELETE SET NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `)
+  await query("ALTER TABLE operator_assessments MODIFY started_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3)")
+  await query(`
+    CREATE TABLE IF NOT EXISTS operator_safety_escalations (
+      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+      conversation_id BIGINT UNSIGNED NOT NULL,
+      operator_id BIGINT UNSIGNED NOT NULL,
+      category ENUM('underage', 'illegal_activity', 'suicidal_intent_with_means', 'persistent_racism') NOT NULL,
+      details VARCHAR(1000) NULL,
+      status ENUM('open', 'reviewed', 'resolved') NOT NULL DEFAULT 'open',
+      reviewed_by BIGINT UNSIGNED NULL,
+      reviewed_at TIMESTAMP NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (id),
+      KEY safety_escalations_status_created_idx (status, created_at),
+      KEY safety_escalations_operator_idx (operator_id, created_at),
+      CONSTRAINT safety_escalations_conversation_fk FOREIGN KEY (conversation_id) REFERENCES conversations (id) ON DELETE CASCADE,
+      CONSTRAINT safety_escalations_operator_fk FOREIGN KEY (operator_id) REFERENCES operators (id) ON DELETE CASCADE,
+      CONSTRAINT safety_escalations_reviewer_fk FOREIGN KEY (reviewed_by) REFERENCES operators (id) ON DELETE SET NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `)
+}
+
 export async function initializeChatmodz() {
   if (isDemoMode()) {
     console.log("Chatmodz development demo mode enabled; MySQL persistence is disabled")
@@ -190,6 +255,7 @@ export async function initializeChatmodz() {
     if (process.env.CHATMODZ_ADMIN_EMAIL && process.env.CHATMODZ_ADMIN_PASSWORD) {
       await ensureBootstrapAdmin()
     }
+    await ensureAssessmentTables()
     await ensureConversationColumns()
     void ensurePerformanceIndexes()
   } catch (error) {
@@ -281,6 +347,9 @@ function tokenFor(operator: Operator) {
 }
 
 function publicOperator(operator: Operator) {
+  const latestDemoAssessment = isDemoMode()
+    ? [...(demoAssessmentAttempts.get(operator.id) || [])].sort((a, b) => b.id - a.id)[0]
+    : null
   return {
     id: operator.id,
     name: operator.full_name,
@@ -288,7 +357,71 @@ function publicOperator(operator: Operator) {
     admin: operator.role === "admin" ? 2 : 1,
     role: operator.role,
     status: operator.status,
+    assessmentStatus: latestDemoAssessment?.status || operator.assessment_status || "not_started",
   }
+}
+
+const typingPassages = [
+  "A thoughtful reply shows that you have read the whole message, answered the question, and made room for the other person to respond. Keep every conversation respectful, original, and on the platform. Never promise a meeting or move contact elsewhere. When something feels unsafe, stop and report it through the correct channel rather than trying to handle it alone.",
+  "Good operators communicate with care and consistency. Read the message before replying, use your own words, answer what was asked, and ask one useful question to continue the online conversation. Protect personal information, avoid promises about meeting in real life, and follow the safety rules even when a conversation becomes uncomfortable.",
+  "Every conversation should stay respectful, original, and within the platform. Do not share phone numbers, email addresses, or social media accounts. Do not suggest a real-life meeting or begin explicit conversation. If a message raises an underage, illegal, self-harm, or persistent-hate concern, stop and use the safety escalation process.",
+]
+
+const assessmentPolicies = [
+  { title: "Write original replies", detail: "Write a distinct, relevant response for each conversation. Reusing the same reply or pasting identical text across chats is prohibited." },
+  { title: "Minimum reply length", detail: "Every live reply must contain at least 75 characters before it can be sent." },
+  { title: "Answer and continue", detail: "Answer the member’s questions and ask a relevant new question to keep the online conversation moving." },
+  { title: "Reply within 25 minutes", detail: "Respond within 25 minutes of the member’s latest message. Late replies are recorded for review." },
+  { title: "Keep contact on-platform", detail: "Never share or request phone numbers, email addresses, social accounts, or another way to contact each other." },
+  { title: "Do not arrange real-life meetings", detail: "Do not agree to, arrange, or hint at meeting in person. Kindly redirect the conversation to online chat." },
+  { title: "Do not say “I love you”", detail: "Never tell a member “I love you” or use that phrase in a reply." },
+  { title: "Do not initiate sexual conversation", detail: "Do not start explicit conversation or sexting. Follow the platform’s content policy if a member initiates." },
+  { title: "Do not discuss illegal activity", detail: "Do not engage in illegal activity or any sexual content involving minors. Stop and report safety concerns." },
+  { title: "Use Panic Room only for severe safety issues", detail: "Escalate suspected underage users, illegal acts, suicidal intent with means, or persistent racism/hate. Do not use it for routine disagreements or ordinary service issues." },
+  { title: "Protect privacy and safety", detail: "Do not reveal private member information, copy conversation details outside the platform, or investigate a safety report yourself." },
+]
+
+const assessmentQuiz = [
+  { id: "contact", prompt: "A member asks for your personal phone number. What do you do?", options: [{ id: "a", text: "Share it if the member seems trustworthy." }, { id: "b", text: "Decline and keep the conversation on this platform." }, { id: "c", text: "Send a social account instead." }], answer: "b" },
+  { id: "meeting", prompt: "A member suggests meeting in person. What do you do?", options: [{ id: "a", text: "Agree to a meeting later." }, { id: "b", text: "Hint that you might meet if the chat goes well." }, { id: "c", text: "Do not arrange or imply a meeting; redirect to online chat." }], answer: "c" },
+  { id: "affection", prompt: "Which statement is prohibited?", options: [{ id: "a", text: "A warm, personal response." }, { id: "b", text: "The exact phrase “I love you.”" }, { id: "c", text: "A relevant question about the member’s day." }], answer: "b" },
+  { id: "explicit", prompt: "What is the rule for explicit conversation?", options: [{ id: "a", text: "Never initiate it; follow applicable platform policy if the member starts it." }, { id: "b", text: "Initiate it to keep the member engaged." }, { id: "c", text: "Move the conversation to another app." }], answer: "a" },
+  { id: "safety", prompt: "A message indicates a minor, illegal acts, suicidal intent with means, or persistent racism. What do you do?", options: [{ id: "a", text: "Use Panic Room, stop the unsafe exchange, and follow escalation guidance." }, { id: "b", text: "Continue chatting and see if the issue resolves." }, { id: "c", text: "Use Panic Room for any disagreement." }], answer: "a", critical: true },
+]
+
+const practiceScenarios = [
+  { id: "contact", memberMessage: "I like talking with you. Can I have your WhatsApp or phone number so we can chat somewhere else?", guidance: "Decline external contact and keep the conversation on this platform." },
+  { id: "meeting", memberMessage: "We seem to get along. Would you meet me for coffee this weekend?", guidance: "Do not agree or hint at a meeting; kindly redirect to continuing the online conversation." },
+  { id: "safety", memberMessage: "I’m under 18 and someone here asked me to keep this secret.", guidance: "Stop the exchange and escalate the suspected underage safety issue. Do not investigate." },
+]
+
+function calculateTypingResult(passage: string, typedText: string, elapsedSeconds: number) {
+  const typed = Array.from(typedText)
+  const expected = Array.from(passage)
+  const exact = typed.reduce((count, character, index) => count + (character === expected[index] ? 1 : 0), 0)
+  const accuracy = Math.round((exact / Math.max(1, typed.length)) * 100)
+  const wpm = Math.round((exact / 5 / Math.max(1, elapsedSeconds)) * 60)
+  return { wpm, accuracy }
+}
+
+function latestDemoAssessment(operatorId: number) {
+  return [...(demoAssessmentAttempts.get(operatorId) || [])].sort((a, b) => b.id - a.id)[0] || null
+}
+
+async function latestAssessment(operatorId: number) {
+  const rows = await query<any>(
+    "SELECT id, status, auto_passed FROM operator_assessments WHERE operator_id = ? ORDER BY id DESC LIMIT 1",
+    [operatorId],
+  )
+  return rows[0] || null
+}
+
+async function latestAssessmentDetails(operatorId: number) {
+  const rows = await query<any>(
+    "SELECT * FROM operator_assessments WHERE operator_id = ? ORDER BY id DESC LIMIT 1",
+    [operatorId],
+  )
+  return rows[0] || null
 }
 
 function publicKey(value: number) {
@@ -302,6 +435,16 @@ function internalId(value: string) {
 
 function meaningfulChars(value: string) {
   return Array.from(value).filter((character) => !/\s/u.test(character)).length
+}
+
+function repliesAreNearDuplicates(left: string, right: string) {
+  const tokenize = (value: string) => new Set(value.toLocaleLowerCase().replace(/[^\p{L}\p{N}\s]/gu, " ").split(/\s+/u).filter((word) => word.length > 2))
+  const leftWords = tokenize(left)
+  const rightWords = tokenize(right)
+  if (leftWords.size < 8 || rightWords.size < 8) return false
+  let overlap = 0
+  for (const word of leftWords) if (rightWords.has(word)) overlap += 1
+  return overlap / new Set([...leftWords, ...rightWords]).size >= 0.9
 }
 
 function rateToMinor(value: unknown) {
@@ -477,7 +620,9 @@ function signedRequestIsValid(req: Request, secret: string) {
 
 async function loadOperator(id: number) {
   const rows = await query<Operator>(
-    "SELECT id, public_id, full_name, email, role, status FROM operators WHERE id = ? LIMIT 1",
+    `SELECT o.id, o.public_id, o.full_name, o.email, o.role, o.status,
+        (SELECT a.status FROM operator_assessments a WHERE a.operator_id = o.id ORDER BY a.id DESC LIMIT 1) AS assessment_status
+     FROM operators o WHERE o.id = ? LIMIT 1`,
     [id],
   )
   return rows[0]
@@ -492,7 +637,12 @@ async function requireChatmodzAuth(req: Request, res: Response, next: NextFuncti
       ? getDemoAccounts().find((item) => item.id === Number(payload.operatorId))
         || demoOperator(payload.role === "operator" ? "operator" : payload.role === "recruiter" ? "recruiter" : "admin")
       : await loadOperator(Number(payload.operatorId))
-    if (!operator || operator.status !== "active") return res.status(401).json({ error: "Session is no longer active" })
+    if (!operator || (operator.status !== "active" && !(operator.role === "operator" && operator.status === "training"))) {
+      return res.status(401).json({ error: "Session is no longer active" })
+    }
+    if (isDemoMode() && operator.role === "operator") {
+      operator.assessment_status = latestDemoAssessment(operator.id)?.status || null
+    }
     req.chatmodzOperator = operator
     if (!isDemoMode()) {
       const now = Date.now()
@@ -508,6 +658,20 @@ async function requireChatmodzAuth(req: Request, res: Response, next: NextFuncti
     if (failConfiguration(res, error)) return
     res.status(401).json({ error: "Invalid session" })
   }
+}
+
+function requireApprovedOperator(req: Request, res: Response, next: NextFunction) {
+  const operator = req.chatmodzOperator
+  if (operator?.role !== "operator") return next()
+  if (operator.status !== "active" || operator.assessment_status !== "approved") {
+    return res.status(403).json({ error: "Complete and pass operator training, then receive recruiter or administrator approval before accessing live conversations.", trainingRequired: true })
+  }
+  next()
+}
+
+function requireChatmodzOperator(req: Request, res: Response, next: NextFunction) {
+  if (req.chatmodzOperator?.role !== "operator") return res.status(403).json({ error: "Operator account required" })
+  next()
 }
 
 function requireChatmodzAdmin(req: Request, res: Response, next: NextFunction) {
@@ -592,7 +756,7 @@ router.get("/health", async (_req, res) => {
   }
 })
 
-router.get("/profile-photo", requireChatmodzAuth, async (req, res) => {
+router.get("/profile-photo", requireChatmodzAuth, requireApprovedOperator, async (req, res) => {
   const requestedUrl = typeof req.query.url === "string" ? req.query.url : ""
   if (!requestedUrl) return res.status(400).json({ error: "Photo URL is required" })
   try {
@@ -676,13 +840,20 @@ router.post("/auth/login", async (req, res) => {
     }
     const operator = findDemoAccount(identifier)
     if (!operator) return res.status(401).json({ error: "Invalid demo credentials" })
+    if (operator.role === "operator") operator.assessment_status = latestDemoAssessment(operator.id)?.status || null
     return res.json({ token: tokenFor(operator), user: publicOperator(operator), demo: true })
   }
   try {
     const rows = await query<any>("SELECT * FROM operators WHERE email = ? LIMIT 1", [identifier])
     const operator = rows[0]
     if (!operator?.password_hash || !(await bcrypt.compare(password, operator.password_hash))) return res.status(401).json({ error: "Invalid credentials" })
-    if (operator.status !== "active") return res.status(403).json({ error: "This operator account is not active" })
+    if (operator.status !== "active" && !(operator.role === "operator" && operator.status === "training")) {
+      return res.status(403).json({ error: "This operator account is not active" })
+    }
+    if (operator.role === "operator") {
+      const assessment = await latestAssessment(Number(operator.id))
+      operator.assessment_status = assessment?.status || null
+    }
     const safe = publicOperator(operator)
     void recordActivity(operator.id, "login")
       .catch((error) => console.error("[Chatmodz] Login activity logging failed:", error))
@@ -706,7 +877,7 @@ router.post("/auth/activate", async (req, res) => {
     if (!record) return res.status(400).json({ error: "Activation code is invalid or expired" })
     const passwordHash = await bcrypt.hash(password, 12)
     await withTransaction(async (connection) => {
-      await connection.execute("UPDATE operators SET password_hash = ?, status = 'active' WHERE id = ?", [passwordHash, record.operator_id])
+      await connection.execute("UPDATE operators SET password_hash = ?, status = 'training' WHERE id = ?", [passwordHash, record.operator_id])
       await connection.execute("UPDATE operator_activation_codes SET used_at = NOW() WHERE id = ?", [record.id])
     })
     const operator = await loadOperator(Number(record.operator_id))
@@ -720,7 +891,275 @@ router.post("/auth/activate", async (req, res) => {
 router.get("/auth/me", requireChatmodzAuth, (req, res) => res.json(publicOperator(req.chatmodzOperator!)))
 router.post("/auth/logout", requireChatmodzAuth, (_req, res) => res.json({ success: true }))
 
-router.get("/conversations", requireChatmodzAuth, async (req, res) => {
+router.get("/training", requireChatmodzAuth, requireChatmodzOperator, async (req, res) => {
+  if (req.chatmodzOperator!.role !== "operator") return res.status(403).json({ error: "Operator training is only available to operators" })
+  try {
+    const assessment = isDemoMode()
+      ? latestDemoAssessment(req.chatmodzOperator!.id)
+      : await latestAssessmentDetails(req.chatmodzOperator!.id)
+    const safeQuiz = assessmentQuiz.map(({ answer: _answer, critical: _critical, ...question }) => question)
+    const safeAssessment = assessment ? {
+      ...assessment,
+      passage: assessment.status === "in_progress" ? typingPassages[Number(assessment.passage_id)] || "" : undefined,
+      quizAnswers: typeof assessment.quiz_answers_json === "string" ? JSON.parse(assessment.quiz_answers_json) : assessment.quiz_answers_json,
+      practiceResponses: typeof assessment.practice_responses_json === "string" ? JSON.parse(assessment.practice_responses_json) : assessment.practice_responses_json,
+    } : null
+    res.json({
+      thresholds: { typingWpm: MIN_TYPING_WPM, typingAccuracy: MIN_TYPING_ACCURACY, quizScore: MIN_QUIZ_SCORE, replyCharacters: MIN_REPLY_CHARS, testSeconds: 60 },
+      policyVersion: POLICY_VERSION,
+      policies: assessmentPolicies,
+      quiz: safeQuiz,
+      scenarios: practiceScenarios.map(({ guidance: _guidance, ...scenario }) => scenario),
+      assessment: safeAssessment,
+    })
+  } catch (error) {
+    if (!failConfiguration(res, error)) res.status(500).json({ error: "Training materials could not be loaded" })
+  }
+})
+
+router.post("/training/start", requireChatmodzAuth, requireChatmodzOperator, async (req, res) => {
+  if (req.chatmodzOperator!.role !== "operator") return res.status(403).json({ error: "Operator training is only available to operators" })
+  const passageId = crypto.randomInt(0, typingPassages.length)
+  const passage = typingPassages[passageId]
+  try {
+    if (isDemoMode()) {
+      const attempts = demoAssessmentAttempts.get(req.chatmodzOperator!.id) || []
+      if (attempts.some((attempt) => attempt.status === "in_progress")) return res.status(409).json({ error: "Finish or refresh your current typing test before starting another." })
+      const latest = latestDemoAssessment(req.chatmodzOperator!.id)
+      if (latest?.status === "submitted" && latest.auto_passed) return res.status(409).json({ error: "Your passed assessment is waiting for recruiter or administrator review." })
+      const attempt = { id: Date.now(), operator_id: req.chatmodzOperator!.id, status: "in_progress", passage_id: passageId, startedAtMs: Date.now() }
+      attempts.push(attempt)
+      demoAssessmentAttempts.set(req.chatmodzOperator!.id, attempts)
+      return res.status(201).json({ id: attempt.id, passage, startedAt: new Date(attempt.startedAtMs).toISOString() })
+    }
+    const current = await query<any>(
+      "SELECT id FROM operator_assessments WHERE operator_id = ? AND status = 'in_progress' ORDER BY id DESC LIMIT 1",
+      [req.chatmodzOperator!.id],
+    )
+    if (current[0]) return res.status(409).json({ error: "Finish or refresh your current typing test before starting another." })
+    const latest = await latestAssessment(req.chatmodzOperator!.id)
+    if (latest?.status === "submitted" && Boolean(latest.auto_passed)) return res.status(409).json({ error: "Your passed assessment is waiting for recruiter or administrator review." })
+    const result: any = await query(
+      "INSERT INTO operator_assessments (operator_id, passage_id) VALUES (?, ?)",
+      [req.chatmodzOperator!.id, passageId],
+    )
+    const rows = await query<any>("SELECT started_at FROM operator_assessments WHERE id = ? LIMIT 1", [Number(result.insertId)])
+    res.status(201).json({ id: Number(result.insertId), passage, startedAt: new Date(rows[0]?.started_at || new Date()).toISOString() })
+  } catch (error) {
+    if (!failConfiguration(res, error)) res.status(500).json({ error: "Typing test could not be started" })
+  }
+})
+
+router.post("/training/:id/submit", requireChatmodzAuth, requireChatmodzOperator, async (req, res) => {
+  if (req.chatmodzOperator!.role !== "operator") return res.status(403).json({ error: "Operator training is only available to operators" })
+  const attemptId = Number(req.params.id)
+  const typedText = String(req.body?.typedText || "").slice(0, 5000)
+  const answers = req.body?.answers && typeof req.body.answers === "object" ? req.body.answers as Record<string, string> : {}
+  const responses = req.body?.practiceResponses && typeof req.body.practiceResponses === "object"
+    ? req.body.practiceResponses as Record<string, string>
+    : {}
+  if (!attemptId || req.body?.rulesAccepted !== true) return res.status(400).json({ error: "Accept the rules and submit a valid attempt." })
+  if (practiceScenarios.some((scenario) => meaningfulChars(String(responses[scenario.id] || "")) < MIN_REPLY_CHARS)) {
+    return res.status(400).json({ error: `Each practice reply must contain at least ${MIN_REPLY_CHARS} non-whitespace characters.` })
+  }
+  const uniqueResponses = Object.values(responses).map((value) => String(value).trim().toLocaleLowerCase().replace(/\s+/g, " "))
+  if (new Set(uniqueResponses).size !== uniqueResponses.length) return res.status(400).json({ error: "Write an original response for each practice chat; identical replies are not allowed." })
+  try {
+    let passageId = -1
+    let elapsedSeconds = 0
+    let demoAttempt: any = null
+    if (isDemoMode()) {
+      demoAttempt = (demoAssessmentAttempts.get(req.chatmodzOperator!.id) || []).find((attempt) => attempt.id === attemptId && attempt.status === "in_progress")
+      if (!demoAttempt) return res.status(404).json({ error: "The typing test was not found or was already submitted." })
+      passageId = Number(demoAttempt.passage_id)
+      elapsedSeconds = Math.floor((Date.now() - Number(demoAttempt.startedAtMs)) / 1000)
+    } else {
+      const attempts = await query<any>(
+        "SELECT id, passage_id, TIMESTAMPDIFF(MICROSECOND, started_at, NOW(3)) / 1000000 AS elapsed_seconds FROM operator_assessments WHERE id = ? AND operator_id = ? AND status = 'in_progress' LIMIT 1",
+        [attemptId, req.chatmodzOperator!.id],
+      )
+      if (!attempts[0]) return res.status(404).json({ error: "The typing test was not found or was already submitted." })
+      passageId = Number(attempts[0].passage_id)
+      elapsedSeconds = Number(attempts[0].elapsed_seconds || 0)
+    }
+    if (elapsedSeconds < MIN_TYPING_TEST_SECONDS) {
+      return res.status(400).json({ error: "Complete the full 60-second typing test before submitting." })
+    }
+    const typing = calculateTypingResult(typingPassages[passageId] || "", typedText, elapsedSeconds)
+    const correctAnswers = assessmentQuiz.filter((question) => answers[question.id] === question.answer).length
+    const quizScore = Math.round((correctAnswers / assessmentQuiz.length) * 100)
+    const criticalPassed = assessmentQuiz.filter((question) => question.critical).every((question) => answers[question.id] === question.answer)
+    const autoPassed = typing.wpm >= MIN_TYPING_WPM
+      && typing.accuracy >= MIN_TYPING_ACCURACY
+      && quizScore >= MIN_QUIZ_SCORE
+      && criticalPassed
+    const submittedAssessment = {
+      id: attemptId,
+      status: "submitted",
+      typing_wpm: typing.wpm,
+      typing_accuracy: typing.accuracy,
+      quiz_score: quizScore,
+      quiz_answers_json: answers,
+      practice_responses_json: responses,
+      policy_version: POLICY_VERSION,
+      rules_acknowledged_at: new Date().toISOString(),
+      auto_passed: autoPassed,
+      submitted_at: new Date().toISOString(),
+    }
+    if (isDemoMode()) {
+      Object.assign(demoAttempt, submittedAssessment)
+    } else {
+      await query(
+        `UPDATE operator_assessments
+         SET status = 'submitted', typed_text = ?, typing_wpm = ?, typing_accuracy = ?,
+             quiz_answers_json = ?, quiz_score = ?, practice_responses_json = ?,
+             policy_version = ?, rules_acknowledged_at = NOW(), auto_passed = ?, submitted_at = NOW()
+         WHERE id = ? AND operator_id = ? AND status = 'in_progress'`,
+        [typedText, typing.wpm, typing.accuracy, JSON.stringify(answers), quizScore, JSON.stringify(responses), POLICY_VERSION, autoPassed, attemptId, req.chatmodzOperator!.id],
+      )
+    }
+    res.json({
+      submitted: true,
+      status: "submitted",
+      autoPassed,
+      typingWpm: typing.wpm,
+      typingAccuracy: typing.accuracy,
+      quizScore,
+      criticalPassed,
+      message: autoPassed
+        ? "Automatic checks passed. A recruiter or administrator must review your practice chats before live access is approved."
+        : "Some automatic checks did not meet the pass requirements. Review your results and retake the tests.",
+    })
+  } catch (error) {
+    if (!failConfiguration(res, error)) res.status(500).json({ error: "Assessment could not be submitted" })
+  }
+})
+
+router.get("/assessments", requireChatmodzAuth, requireChatmodzRecruiter, async (req, res) => {
+  const viewer = req.chatmodzOperator!
+  if (isDemoMode()) {
+    const operators = viewer.role === "admin"
+      ? [getDemoAccounts().find((operator) => operator.role === "operator")!]
+      : demoRecruiterOperators.filter((operator) => Number(operator.recruiter_id) === viewer.id)
+    const assessments = operators.map((operator) => ({
+      operator_id: Number(operator.id),
+      operator_name: operator.full_name,
+      operator_email: operator.email,
+      operator_status: operator.status,
+      recruiter_name: operator.recruiter_name || null,
+      ...(latestDemoAssessment(Number(operator.id)) || { status: "not_started", auto_passed: false }),
+    }))
+    return res.json({ assessments, demo: true })
+  }
+  try {
+    const scope = viewer.role === "admin" ? "" : "AND o.recruiter_id = ?"
+    const params = viewer.role === "admin" ? [] : [viewer.id]
+    const assessments = await query<any>(
+      `SELECT o.id AS operator_id, o.full_name AS operator_name, o.email AS operator_email,
+          o.status AS operator_status, r.full_name AS recruiter_name,
+          a.id, COALESCE(a.status, 'not_started') AS status, a.auto_passed, a.typing_wpm,
+          a.typing_accuracy, a.quiz_score, a.quiz_answers_json, a.practice_responses_json,
+          a.policy_version, a.rules_acknowledged_at, a.reviewer_note, a.submitted_at,
+          reviewer.full_name AS reviewed_by_name, a.reviewed_at
+       FROM operators o
+       LEFT JOIN operators r ON r.id = o.recruiter_id
+       LEFT JOIN operator_assessments a ON a.id = (
+         SELECT latest.id FROM operator_assessments latest
+         WHERE latest.operator_id = o.id ORDER BY latest.id DESC LIMIT 1
+       )
+       LEFT JOIN operators reviewer ON reviewer.id = a.reviewed_by
+       WHERE o.role = 'operator' ${scope}
+       ORDER BY CASE WHEN a.status = 'submitted' AND a.auto_passed = 1 THEN 0 ELSE 1 END, a.submitted_at DESC, o.created_at DESC`,
+      params,
+    )
+    res.json({ assessments: assessments.map((assessment) => ({
+      ...assessment,
+      quiz_answers_json: typeof assessment.quiz_answers_json === "string" ? JSON.parse(assessment.quiz_answers_json) : assessment.quiz_answers_json,
+      practice_responses_json: typeof assessment.practice_responses_json === "string" ? JSON.parse(assessment.practice_responses_json) : assessment.practice_responses_json,
+      auto_passed: Boolean(assessment.auto_passed),
+    })) })
+  } catch (error) {
+    if (!failConfiguration(res, error)) res.status(500).json({ error: "Assessment results could not be loaded" })
+  }
+})
+
+router.get("/late-replies", requireChatmodzAuth, requireChatmodzRecruiter, async (req, res) => {
+  const viewer = req.chatmodzOperator!
+  if (isDemoMode()) return res.json({ lateReplies: [], demo: true })
+  try {
+    const scope = viewer.role === "admin" ? "" : "AND op.recruiter_id = ?"
+    const params = viewer.role === "admin" ? [] : [viewer.id]
+    const lateReplies = await query<any>(
+      `SELECT a.id, a.actor_operator_id AS operator_id, op.full_name AS operator_name,
+          c.member_alias, c.managed_profile_alias, a.entity_id AS conversation_id,
+          CAST(JSON_UNQUOTE(JSON_EXTRACT(a.metadata_json, '$.minutesSinceLastMemberMessage')) AS UNSIGNED) AS minutes_waited,
+          a.created_at
+       FROM audit_log a
+       JOIN operators op ON op.id = a.actor_operator_id
+       JOIN conversations c ON c.id = a.entity_id
+       WHERE a.action = 'late_operator_reply'
+         AND a.created_at >= DATE_SUB(NOW(), INTERVAL 90 DAY) ${scope}
+       ORDER BY a.created_at DESC LIMIT 250`,
+      params,
+    )
+    res.json({ lateReplies })
+  } catch (error) {
+    if (!failConfiguration(res, error)) res.status(500).json({ error: "Late replies could not be loaded" })
+  }
+})
+
+router.post("/assessments/:id/decision", requireChatmodzAuth, requireChatmodzRecruiter, async (req, res) => {
+  const assessmentId = Number(req.params.id)
+  const decision = String(req.body?.decision || "")
+  const reviewerNote = String(req.body?.reviewerNote || "").trim().slice(0, 1000)
+  if (!assessmentId || !["approve", "reject"].includes(decision)) return res.status(400).json({ error: "Choose approve or reject for a valid assessment." })
+  const approved = decision === "approve"
+  try {
+    if (isDemoMode()) {
+      const attempt = [...demoAssessmentAttempts.values()].flat().find((item) => item.id === assessmentId && item.status === "submitted")
+      const operator = [...getDemoAccounts(), ...demoRecruiterOperators].find((item) => Number(item.id) === Number(attempt?.operator_id))
+      const owned = operator && (req.chatmodzOperator!.role === "admin" || Number(operator.recruiter_id) === req.chatmodzOperator!.id)
+      if (!attempt || !owned) return res.status(404).json({ error: "Assessment not found in your team." })
+      if (approved && !attempt.auto_passed) return res.status(409).json({ error: "This operator did not pass the automatic checks and cannot be approved." })
+      attempt.status = approved ? "approved" : "rejected"
+      attempt.reviewer_note = reviewerNote
+      attempt.reviewed_by_name = req.chatmodzOperator!.full_name
+      attempt.reviewed_at = new Date().toISOString()
+      operator.status = approved ? "active" : "training"
+      return res.json({ decided: true, status: attempt.status, demo: true })
+    }
+    const scope = req.chatmodzOperator!.role === "admin" ? "" : "AND o.recruiter_id = ?"
+    const params = req.chatmodzOperator!.role === "admin" ? [assessmentId] : [assessmentId, req.chatmodzOperator!.id]
+    const rows = await query<any>(
+      `SELECT a.id, a.operator_id, a.status, a.auto_passed FROM operator_assessments a
+       JOIN operators o ON o.id = a.operator_id
+       WHERE a.id = ? ${scope}
+         AND a.status = 'submitted'
+         AND NOT EXISTS (SELECT 1 FROM operator_assessments newer WHERE newer.operator_id = a.operator_id AND newer.id > a.id)
+       LIMIT 1`,
+      params,
+    )
+    const assessment = rows[0]
+    if (!assessment) return res.status(404).json({ error: "Assessment not found, already reviewed, or not assigned to your team." })
+    if (approved && !assessment.auto_passed) return res.status(409).json({ error: "This operator did not pass the automatic checks and cannot be approved." })
+    await withTransaction(async (connection) => {
+      await connection.execute(
+        "UPDATE operator_assessments SET status = ?, reviewer_note = ?, reviewed_by = ?, reviewed_at = NOW() WHERE id = ?",
+        [approved ? "approved" : "rejected", reviewerNote || null, req.chatmodzOperator!.id, assessmentId],
+      )
+      await connection.execute("UPDATE operators SET status = ? WHERE id = ?", [approved ? "active" : "training", assessment.operator_id])
+      await connection.execute(
+        "INSERT INTO audit_log (actor_operator_id, action, entity_type, entity_id, metadata_json) VALUES (?, ?, 'operator_assessment', ?, ?)",
+        [req.chatmodzOperator!.id, approved ? "approve_operator_assessment" : "reject_operator_assessment", assessmentId, JSON.stringify({ operatorId: Number(assessment.operator_id), reviewerNote })],
+      )
+    })
+    res.json({ decided: true, status: approved ? "approved" : "rejected" })
+  } catch (error) {
+    if (!failConfiguration(res, error)) res.status(500).json({ error: "Assessment decision could not be saved" })
+  }
+})
+
+router.get("/conversations", requireChatmodzAuth, requireApprovedOperator, async (req, res) => {
   if (isDemoMode()) return res.json({ conversations: [], total: 0, page: 1, pages: 1, demo: true })
   try {
     const rows = await query<any>(`
@@ -762,7 +1201,7 @@ router.get("/conversations", requireChatmodzAuth, async (req, res) => {
   }
 })
 
-router.get("/conversations/:key/messages", requireChatmodzAuth, async (req, res) => {
+router.get("/conversations/:key/messages", requireChatmodzAuth, requireApprovedOperator, async (req, res) => {
   const conversationId = internalId(String(req.params.key))
   if (!conversationId) return res.status(400).json({ error: "Invalid conversation" })
   if (isDemoMode()) {
@@ -812,7 +1251,113 @@ router.get("/conversations/:key/messages", requireChatmodzAuth, async (req, res)
   }
 })
 
-router.put("/conversations/:key/notes", requireChatmodzAuth, async (req, res) => {
+router.post("/conversations/:key/panic-room", requireChatmodzAuth, requireApprovedOperator, async (req, res) => {
+  const conversationId = internalId(String(req.params.key))
+  const category = String(req.body?.category || "")
+  const allowedCategories = ["underage", "illegal_activity", "suicidal_intent_with_means", "persistent_racism"]
+  const details = String(req.body?.details || "").trim().slice(0, 1000)
+  if (!conversationId || !allowedCategories.includes(category)) {
+    return res.status(400).json({ error: "Choose one of the severe safety issues listed in Panic Room." })
+  }
+  try {
+    if (isDemoMode()) {
+      const escalation = {
+        id: Date.now(),
+        conversation_id: conversationId,
+        operator_id: req.chatmodzOperator!.id,
+        operator_name: req.chatmodzOperator!.full_name,
+        category,
+        details,
+        status: "open",
+        created_at: new Date().toISOString(),
+      }
+      demoSafetyEscalations.unshift(escalation)
+      return res.status(201).json({ escalation, demo: true })
+    }
+    const conversations = await query<any>(
+      "SELECT id FROM conversations WHERE id = ? AND assigned_operator_id = ? AND lock_expires_at > NOW() LIMIT 1",
+      [conversationId, req.chatmodzOperator!.id],
+    )
+    if (!conversations[0]) return res.status(409).json({ error: "Lock this conversation before escalating it." })
+    const result: any = await query(
+      "INSERT INTO operator_safety_escalations (conversation_id, operator_id, category, details) VALUES (?, ?, ?, ?)",
+      [conversationId, req.chatmodzOperator!.id, category, details || null],
+    )
+    await query(
+      "INSERT INTO audit_log (actor_operator_id, action, entity_type, entity_id, metadata_json) VALUES (?, 'panic_room_escalation', 'conversation', ?, ?)",
+      [req.chatmodzOperator!.id, conversationId, JSON.stringify({ escalationId: Number(result.insertId), category })],
+    )
+    res.status(201).json({ escalationId: Number(result.insertId), status: "open" })
+  } catch (error) {
+    if (!failConfiguration(res, error)) res.status(500).json({ error: "Safety escalation could not be recorded" })
+  }
+})
+
+router.get("/safety-escalations", requireChatmodzAuth, requireChatmodzRecruiter, async (req, res) => {
+  const viewer = req.chatmodzOperator!
+  if (isDemoMode()) {
+    const escalations = viewer.role === "admin"
+      ? demoSafetyEscalations
+      : demoSafetyEscalations.filter((escalation) => demoRecruiterOperators.some((operator) => Number(operator.id) === Number(escalation.operator_id) && Number(operator.recruiter_id) === viewer.id))
+    return res.json({ escalations, demo: true })
+  }
+  try {
+    const scope = viewer.role === "admin" ? "" : "AND op.recruiter_id = ?"
+    const params = viewer.role === "admin" ? [] : [viewer.id]
+    const escalations = await query<any>(
+      `SELECT e.id, e.conversation_id, c.member_alias, c.managed_profile_alias,
+          e.operator_id, op.full_name AS operator_name, op.recruiter_id,
+          e.category, e.details, e.status, e.created_at, e.reviewed_at,
+          reviewer.full_name AS reviewed_by_name
+       FROM operator_safety_escalations e
+       JOIN conversations c ON c.id = e.conversation_id
+       JOIN operators op ON op.id = e.operator_id
+       LEFT JOIN operators reviewer ON reviewer.id = e.reviewed_by
+       WHERE 1 = 1 ${scope}
+       ORDER BY CASE WHEN e.status = 'open' THEN 0 ELSE 1 END, e.created_at DESC LIMIT 250`,
+      params,
+    )
+    res.json({ escalations })
+  } catch (error) {
+    if (!failConfiguration(res, error)) res.status(500).json({ error: "Safety reports could not be loaded" })
+  }
+})
+
+router.post("/safety-escalations/:id/status", requireChatmodzAuth, requireChatmodzRecruiter, async (req, res) => {
+  const escalationId = Number(req.params.id)
+  const status = String(req.body?.status || "")
+  if (!escalationId || !["reviewed", "resolved"].includes(status)) return res.status(400).json({ error: "Choose reviewed or resolved." })
+  if (isDemoMode()) {
+    const escalation = demoSafetyEscalations.find((item) => Number(item.id) === escalationId)
+    const operator = demoRecruiterOperators.find((item) => Number(item.id) === Number(escalation?.operator_id))
+    if (!escalation || (req.chatmodzOperator!.role !== "admin" && Number(operator?.recruiter_id) !== req.chatmodzOperator!.id)) {
+      return res.status(404).json({ error: "Safety report not found in your team." })
+    }
+    escalation.status = status
+    escalation.reviewed_by_name = req.chatmodzOperator!.full_name
+    escalation.reviewed_at = new Date().toISOString()
+    return res.json({ updated: true, demo: true })
+  }
+  try {
+    const scope = req.chatmodzOperator!.role === "admin" ? "" : "AND op.recruiter_id = ?"
+    const params = req.chatmodzOperator!.role === "admin"
+      ? [status, req.chatmodzOperator!.id, escalationId]
+      : [status, req.chatmodzOperator!.id, escalationId, req.chatmodzOperator!.id]
+    const result: any = await query(
+      `UPDATE operator_safety_escalations e
+       JOIN operators op ON op.id = e.operator_id
+       SET e.status = ?, e.reviewed_by = ?, e.reviewed_at = NOW()
+       WHERE e.id = ? ${scope}`,
+      params,
+    )
+    if (!result.affectedRows) return res.status(404).json({ error: "Safety report not found in your team." })
+    res.json({ updated: true })
+  } catch (error) {
+    if (!failConfiguration(res, error)) res.status(500).json({ error: "Safety report could not be updated" })
+  }
+})
+
+const updateConversationNotes = async (req: Request, res: Response) => {
   const conversationId = internalId(String(req.params.key))
   if (!conversationId) return res.status(400).json({ error: "Invalid conversation" })
   const text = String(req.body?.notes ?? req.body?.text ?? "").trim().slice(0, MAX_OPERATOR_NOTES)
@@ -853,9 +1398,13 @@ router.put("/conversations/:key/notes", requireChatmodzAuth, async (req, res) =>
     if (failConfiguration(res, error)) return
     res.status(500).json({ error: "Notes unavailable" })
   }
-})
+}
 
-router.post("/conversations/:key/lock", requireChatmodzAuth, async (req, res) => {
+router.put("/conversations/:key/notes", requireChatmodzAuth, requireApprovedOperator, updateConversationNotes)
+// Older clients used POST for shared notes. Keep the alias while the app and API deploy independently.
+router.post("/conversations/:key/notes", requireChatmodzAuth, requireApprovedOperator, updateConversationNotes)
+
+router.post("/conversations/:key/lock", requireChatmodzAuth, requireApprovedOperator, async (req, res) => {
   const conversationId = internalId(String(req.params.key))
   if (!conversationId) return res.status(400).json({ error: "Invalid conversation" })
   try {
@@ -873,7 +1422,7 @@ router.post("/conversations/:key/lock", requireChatmodzAuth, async (req, res) =>
   }
 })
 
-router.post("/conversations/:key/unlock", requireChatmodzAuth, async (req, res) => {
+router.post("/conversations/:key/unlock", requireChatmodzAuth, requireApprovedOperator, async (req, res) => {
   const conversationId = internalId(String(req.params.key))
   try {
     const rows = await query<any>("SELECT assigned_operator_id FROM conversations WHERE id = ? LIMIT 1", [conversationId])
@@ -889,7 +1438,7 @@ router.post("/conversations/:key/unlock", requireChatmodzAuth, async (req, res) 
   }
 })
 
-router.post("/conversations/:key/keepalive", requireChatmodzAuth, async (req, res) => {
+router.post("/conversations/:key/keepalive", requireChatmodzAuth, requireApprovedOperator, async (req, res) => {
   const conversationId = internalId(String(req.params.key))
   try {
     const result: any = await database().execute("UPDATE conversations SET lock_expires_at = DATE_ADD(NOW(), INTERVAL 10 MINUTE) WHERE id = ? AND assigned_operator_id = ? AND lock_expires_at > NOW()", [conversationId, req.chatmodzOperator!.id])
@@ -901,13 +1450,25 @@ router.post("/conversations/:key/keepalive", requireChatmodzAuth, async (req, re
   }
 })
 
-router.post("/conversations/:key/reply", requireChatmodzAuth, async (req, res) => {
+router.post("/conversations/:key/reply", requireChatmodzAuth, requireApprovedOperator, async (req, res) => {
   const conversationId = internalId(String(req.params.key))
   const body = String(req.body?.message || "").trim()
   const mediaUrl = String(req.body?.mediaUrl || "").trim() || null
   const mediaType = String(req.body?.mediaType || "").trim() || null
   if (!conversationId || (!body && !mediaUrl)) return res.status(400).json({ error: "Reply text or media is required" })
-  if (req.chatmodzOperator!.role !== "admin" && meaningfulChars(body) < MIN_REPLY_CHARS) return res.status(400).json({ error: `Reply must contain at least ${MIN_REPLY_CHARS} non-whitespace characters` })
+  if (meaningfulChars(body) < MIN_REPLY_CHARS) return res.status(400).json({ error: `Every reply must contain at least ${MIN_REPLY_CHARS} non-whitespace characters` })
+  if (!/[?？]/u.test(body)) return res.status(400).json({ error: "Answer the member and include a relevant follow-up question." })
+  if (/\bi\s+love\s+you\b/i.test(body)) return res.status(400).json({ error: "Replies must not include the phrase “I love you”." })
+  if (/\b(?:let['’]?s|we should|i(?:'d| would) (?:love|like) to|would you like to)\s+(?:meet|go out|see each other|grab coffee)\b|\bmeet you (?:this|next|on)\b/i.test(body)) {
+    return res.status(400).json({ error: "Do not arrange or suggest an in-person meeting. Redirect to online chat." })
+  }
+  if (/(?:https?:\/\/|www\.|[\w.%+-]+@[\w.-]+\.[a-z]{2,}|\b(?:whatsapp|telegram|instagram|facebook|snapchat|tiktok)\b|\+?\d[\d\s().-]{8,}\d)/i.test(body)) {
+    return res.status(400).json({ error: "Do not share contact details or direct anyone off this platform." })
+  }
+  const explicitContent = /\b(?:sex|sext(?:ing)?|nude|naked|dick|cock|pussy|blowjob|orgasm|fuck(?:ing)?)\b/i
+  if (req.chatmodzOperator!.role === "operator" && explicitContent.test(body)) {
+    return res.status(400).json({ error: "Do not initiate explicit conversation. Keep the reply within the platform's content policy." })
+  }
   try {
     const levels = await query<any>(
       `SELECT l.id, l.rate_minor, l.currency
@@ -923,6 +1484,23 @@ router.post("/conversations/:key/reply", requireChatmodzAuth, async (req, res) =
     const rows = await query<any>("SELECT c.*, s.endpoint_base_url, s.secret_env_key, s.internal_name FROM conversations c JOIN sites s ON s.id = c.site_id WHERE c.id = ? AND c.assigned_operator_id = ? AND c.lock_expires_at > NOW() LIMIT 1", [conversationId, req.chatmodzOperator!.id])
     const conversation = rows[0]
     if (!conversation) return res.status(409).json({ error: "Lock expired or is not yours" })
+    const normalizedReply = body.toLocaleLowerCase().replace(/\s+/g, " ").trim()
+    const recentReplies = await query<any>(
+      "SELECT body FROM messages WHERE sent_by_operator_id = ? AND sent_at >= DATE_SUB(NOW(), INTERVAL 90 DAY) ORDER BY sent_at DESC LIMIT 500",
+      [req.chatmodzOperator!.id],
+    )
+    if (recentReplies.some((item) => {
+      const previous = String(item.body || "").toLocaleLowerCase().replace(/\s+/g, " ").trim()
+      return previous === normalizedReply || repliesAreNearDuplicates(previous, normalizedReply)
+    })) {
+      return res.status(409).json({ error: "This reply is too similar to a recent message. Write an original reply for this conversation." })
+    }
+    const lastMemberMessage = await query<any>(
+      "SELECT sent_at FROM messages WHERE conversation_id = ? AND sender_type = 'member' ORDER BY sent_at DESC, id DESC LIMIT 1",
+      [conversationId],
+    )
+    const latestMemberAt = lastMemberMessage[0]?.sent_at ? new Date(lastMemberMessage[0].sent_at).getTime() : null
+    const late = latestMemberAt !== null && Date.now() - latestMemberAt > 25 * 60 * 1000
     const externalMessageId = `chatmodz-${crypto.randomBytes(10).toString("hex")}`
     const deliveryPayload = { conversationId: conversation.external_conversation_id, messageId: externalMessageId, body, sentAt: new Date().toISOString() }
     await query("INSERT INTO messages (conversation_id, external_message_id, sender_type, body, media_proxy_url, media_type, delivery_status, sent_by_operator_id) VALUES (?, ?, 'managed_profile', ?, ?, ?, 'queued', ?)", [conversationId, externalMessageId, body, mediaUrl, mediaType, req.chatmodzOperator!.id])
@@ -938,20 +1516,26 @@ router.post("/conversations/:key/reply", requireChatmodzAuth, async (req, res) =
       await query("UPDATE messages SET delivery_status = 'delivered' WHERE id = ?", [messageId])
       await query("UPDATE integration_deliveries SET status = 'delivered', attempt_count = attempt_count + 1, delivered_at = NOW() WHERE external_event_id = ?", [externalMessageId])
       await recordActivity(req.chatmodzOperator!.id, "reply", conversationId, Number(conversation.site_id))
+      if (late) {
+        await query(
+          "INSERT INTO audit_log (actor_operator_id, action, entity_type, entity_id, metadata_json) VALUES (?, 'late_operator_reply', 'conversation', ?, ?)",
+          [req.chatmodzOperator!.id, conversationId, JSON.stringify({ minutesSinceLastMemberMessage: Math.floor((Date.now() - latestMemberAt!) / 60000) })],
+        ).catch((error) => console.error("[Chatmodz] Late reply audit failed:", error))
+      }
     } catch (error: any) {
       await query("UPDATE messages SET delivery_status = 'failed' WHERE id = ?", [messageId])
       await query("UPDATE integration_deliveries SET status = 'failed', attempt_count = attempt_count + 1, error_message = ? WHERE external_event_id = ?", [String(error?.message || "Delivery failed").slice(0, 500), externalMessageId])
       await query("UPDATE operator_earnings SET status = 'void' WHERE message_id = ?", [messageId])
       return res.status(502).json({ error: "Reply could not be delivered to the connected site" })
     }
-    res.json({ message: { id: messageId, senderType: "managed_profile", u1: -1, u2: -2, message: body, time: Math.floor(new Date(messageRows[0].sent_at).getTime() / 1000), read: 1, mediaUrl: operatorMediaPath(mediaUrl), mediaType }, deliveryStatus: "delivered" })
+    res.json({ message: { id: messageId, senderType: "managed_profile", u1: -1, u2: -2, message: body, time: Math.floor(new Date(messageRows[0].sent_at).getTime() / 1000), read: 1, mediaUrl: operatorMediaPath(mediaUrl), mediaType }, deliveryStatus: "delivered", late })
   } catch (error) {
     if (failConfiguration(res, error)) return
     res.status(500).json({ error: "Reply unavailable" })
   }
 })
 
-router.get("/stats", requireChatmodzAuth, async (req, res) => {
+router.get("/stats", requireChatmodzAuth, requireApprovedOperator, async (req, res) => {
   if (isDemoMode()) return res.json({ activeLocks: 0, totalConversations: 0, messagesSent: 0, demo: true })
   try {
     const [[conversation], [locks], [sent]] = await Promise.all([
@@ -1100,7 +1684,7 @@ router.post("/integrations/:siteKey/messages", async (req, res) => {
   }
 })
 
-router.get("/earnings", requireChatmodzAuth, async (req, res) => {
+router.get("/earnings", requireChatmodzAuth, requireApprovedOperator, async (req, res) => {
   const operatorId = req.chatmodzOperator!.id
   const schedule = payoutSchedule()
   if (isDemoMode()) {
@@ -1379,7 +1963,26 @@ router.get("/admin/operators", requireChatmodzAuth, requireChatmodzAdmin, async 
 router.post("/admin/operators/:id/status", requireChatmodzAuth, requireChatmodzAdmin, async (req, res) => {
   const status = String(req.body?.status || "")
   if (!["training", "active", "suspended", "rejected"].includes(status)) return res.status(400).json({ error: "Invalid operator status" })
-  try { await query("UPDATE operators SET status = ? WHERE id = ?", [status, Number(req.params.id)]); res.json({ updated: true }) }
+  try {
+    const operatorId = Number(req.params.id)
+    if (isDemoMode()) {
+      const target = getDemoAccounts().find((operator) => operator.id === operatorId)
+      if (!target || target.role !== "operator") return res.status(404).json({ error: "Operator not found" })
+      if (status === "active" && latestDemoAssessment(operatorId)?.status !== "approved") {
+        return res.status(409).json({ error: "Operators must pass and receive approval for the assessment before becoming active." })
+      }
+      target.status = status
+      return res.json({ updated: true, demo: true })
+    }
+    const target = await query<any>("SELECT id, role FROM operators WHERE id = ? LIMIT 1", [operatorId])
+    if (!target[0]) return res.status(404).json({ error: "Operator not found" })
+    if (target[0].role === "operator" && status === "active") {
+      const assessment = await latestAssessment(operatorId)
+      if (assessment?.status !== "approved") return res.status(409).json({ error: "Operators must pass and receive approval for the assessment before becoming active." })
+    }
+    await query("UPDATE operators SET status = ? WHERE id = ?", [status, operatorId])
+    res.json({ updated: true })
+  }
   catch (error) { if (!failConfiguration(res, error)) res.status(500).json({ error: "Could not update operator" }) }
 })
 
@@ -1566,6 +2169,9 @@ router.post("/recruiter/operators/:id/status", requireChatmodzAuth, requireChatm
   if (isDemoMode()) {
     const operator = demoRecruiterOperators.find((item) => Number(item.id) === operatorId && (req.chatmodzOperator!.role === "admin" || Number(item.recruiter_id) === req.chatmodzOperator!.id))
     if (!operator) return res.status(404).json({ error: "Operator not found in your team" })
+    if (status === "active" && latestDemoAssessment(operatorId)?.status !== "approved") {
+      return res.status(409).json({ error: "Operators must pass and receive approval for the assessment before becoming active." })
+    }
     operator.status = status
     return res.json({ updated: true, demo: true })
   }
@@ -1574,6 +2180,10 @@ router.post("/recruiter/operators/:id/status", requireChatmodzAuth, requireChatm
       ? await query<any>("SELECT id FROM operators WHERE id = ? AND role = 'operator' LIMIT 1", [operatorId])
       : await query<any>("SELECT id FROM operators WHERE id = ? AND role = 'operator' AND recruiter_id = ? LIMIT 1", [operatorId, req.chatmodzOperator!.id])
     if (!owned[0]) return res.status(404).json({ error: "Operator not found in your team" })
+    if (status === "active") {
+      const assessment = await latestAssessment(operatorId)
+      if (assessment?.status !== "approved") return res.status(409).json({ error: "Operators must pass and receive approval for the assessment before becoming active." })
+    }
     await query("UPDATE operators SET status = ? WHERE id = ?", [status, operatorId])
     await recordActivity(operatorId, "training", undefined, undefined, { changedBy: req.chatmodzOperator!.id, status })
     await query("INSERT INTO audit_log (actor_operator_id, action, entity_type, entity_id, metadata_json) VALUES (?, 'change_operator_status', 'operator', ?, ?)", [req.chatmodzOperator!.id, operatorId, JSON.stringify({ status })])

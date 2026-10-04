@@ -100,6 +100,34 @@ CREATE TABLE IF NOT EXISTS operator_activation_codes (
   CONSTRAINT activation_operator_fk FOREIGN KEY (operator_id) REFERENCES operators (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS operator_assessments (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  operator_id BIGINT UNSIGNED NOT NULL,
+  status ENUM('in_progress', 'submitted', 'approved', 'rejected') NOT NULL DEFAULT 'in_progress',
+  passage_id TINYINT UNSIGNED NOT NULL,
+  typed_text MEDIUMTEXT NULL,
+  typing_wpm DECIMAL(6,2) NULL,
+  typing_accuracy DECIMAL(5,2) NULL,
+  quiz_answers_json JSON NULL,
+  quiz_score DECIMAL(5,2) NULL,
+  practice_responses_json JSON NULL,
+  policy_version VARCHAR(32) NULL,
+  rules_acknowledged_at TIMESTAMP NULL,
+  auto_passed BOOLEAN NOT NULL DEFAULT FALSE,
+  reviewer_note VARCHAR(1000) NULL,
+  started_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  submitted_at TIMESTAMP NULL,
+  reviewed_by BIGINT UNSIGNED NULL,
+  reviewed_at TIMESTAMP NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY assessments_operator_latest_idx (operator_id, id),
+  KEY assessments_review_idx (status, auto_passed, submitted_at),
+  CONSTRAINT assessments_operator_fk FOREIGN KEY (operator_id) REFERENCES operators (id) ON DELETE CASCADE,
+  CONSTRAINT assessments_reviewer_fk FOREIGN KEY (reviewed_by) REFERENCES operators (id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS conversations (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   site_id BIGINT UNSIGNED NOT NULL,
@@ -126,6 +154,24 @@ CREATE TABLE IF NOT EXISTS conversations (
   CONSTRAINT conversations_site_fk FOREIGN KEY (site_id) REFERENCES sites (id) ON DELETE RESTRICT,
   CONSTRAINT conversations_operator_fk FOREIGN KEY (assigned_operator_id) REFERENCES operators (id) ON DELETE SET NULL,
   CONSTRAINT conversations_notes_operator_fk FOREIGN KEY (operator_notes_updated_by) REFERENCES operators (id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS operator_safety_escalations (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  conversation_id BIGINT UNSIGNED NOT NULL,
+  operator_id BIGINT UNSIGNED NOT NULL,
+  category ENUM('underage', 'illegal_activity', 'suicidal_intent_with_means', 'persistent_racism') NOT NULL,
+  details VARCHAR(1000) NULL,
+  status ENUM('open', 'reviewed', 'resolved') NOT NULL DEFAULT 'open',
+  reviewed_by BIGINT UNSIGNED NULL,
+  reviewed_at TIMESTAMP NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY safety_escalations_status_created_idx (status, created_at),
+  KEY safety_escalations_operator_idx (operator_id, created_at),
+  CONSTRAINT safety_escalations_conversation_fk FOREIGN KEY (conversation_id) REFERENCES conversations (id) ON DELETE CASCADE,
+  CONSTRAINT safety_escalations_operator_fk FOREIGN KEY (operator_id) REFERENCES operators (id) ON DELETE CASCADE,
+  CONSTRAINT safety_escalations_reviewer_fk FOREIGN KEY (reviewed_by) REFERENCES operators (id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS conversation_assignments (

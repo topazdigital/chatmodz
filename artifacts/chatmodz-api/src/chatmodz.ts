@@ -1030,7 +1030,7 @@ router.post("/integrations/:siteKey/profiles", async (req, res) => {
     res.status(202).json({ accepted: true, matched: matched.length, updated: Number(result?.affectedRows || 0) > 0 })
   } catch (error) {
     if (failConfiguration(res, error)) return
-    res.status(500).json({ error: "Could not update profile photos" })
+    res.status(500).json({ error: "Could not update conversation profiles" })
   }
 })
 

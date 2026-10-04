@@ -29,13 +29,24 @@ Content-Type: application/json
     "age": 31,
     "bio": "Loves live music and weekend road trips.",
     "gallery": ["https://richdatingnetwork.com/api/uploads/member-123-2.jpg"],
-    "details": { "Languages": "English, Swahili" }
+    "details": {
+      "Gender": "Female",
+      "Zodiac": "Cancer",
+      "Occupation": "Designer",
+      "Interests": "Live music, travel",
+      "Languages": "English, Swahili"
+    }
   },
   "managedProfile": {
     "location": "Buenos Aires, Argentina",
     "age": 34,
     "bio": "Curious, warm, and always planning the next adventure.",
-    "gallery": ["https://richdatingnetwork.com/api/uploads/profile-456-2.jpg"]
+    "gallery": ["https://richdatingnetwork.com/api/uploads/profile-456-2.jpg"],
+    "details": {
+      "Gender": "Male",
+      "Zodiac": "Aries",
+      "Occupation": "Photographer"
+    }
   },
   "sender": "member",
   "body": "Hi, how are you?",
@@ -59,9 +70,10 @@ the real member sent it and `managed_profile` when the managed profile sent it.
 or history synchronization resend that message.
 Empty, unsupported, and malformed values are ignored.
 Optional `memberProfile` and `managedProfile` objects can provide `location`,
-`age`, `bio`, `gallery`, and a small `details` map. The operator workspace
-shows these values when supplied and keeps the conversation usable when a site
-does not provide them.
+`age`, `bio`, `gallery`, and a small `details` map (for example gender, zodiac,
+occupation, education, relationship status, interests, or languages). The
+operator workspace shows the supplied values for both participants and keeps
+the conversation usable when a site does not provide them.
 
 The `sender` value may also be `managed_profile` when the connected site
 reports a reply sent directly from its own interface. These messages are

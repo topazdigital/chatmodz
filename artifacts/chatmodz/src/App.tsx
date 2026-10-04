@@ -620,7 +620,7 @@ function ProfileCard({ profileUser, tone }: { profileUser: ConvUser; tone: "memb
     </div>
     {gallery.length > 1 && <div className="profile-gallery" aria-label={`${profileUser.name} photo gallery`}>{gallery.slice(1, 5).map((photo, index) => <Avatar key={`${photo}-${index}`} photo={photo} name={profileUser.name} size={46} shape="square" />)}</div>}
     {profile.bio && <p className="profile-bio">{profile.bio}</p>}
-    {hasDetails ? <div className="profile-facts">{profile.age && <span><CalendarDays size={12} /> {profile.age} years</span>}{Object.entries(profile.details || {}).slice(0, 3).map(([label, value]) => <span key={label}><strong>{label}</strong>{value}</span>)}</div> : <span className="profile-empty">Profile details were not supplied by the connected site.</span>}
+    {hasDetails ? <div className="profile-facts">{profile.age && <span><CalendarDays size={12} /> {profile.age} years</span>}{Object.entries(profile.details || {}).slice(0, 7).map(([label, value]) => <span key={label}><strong>{label}</strong>{value}</span>)}</div> : <span className="profile-empty">Profile details were not supplied by the connected site.</span>}
   </article>;
 }
 

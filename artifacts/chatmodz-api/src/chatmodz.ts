@@ -1403,7 +1403,7 @@ const updateConversationNotes = async (req: Request, res: Response) => {
 // Use POST from the web client because some production Apache configurations reject PUT with 406.
 router.post("/conversations/:key/notes", requireChatmodzAuth, requireApprovedOperator, updateConversationNotes)
 // Keep PUT available for older clients and deployments that permit it.
-router.post("/conversations/:key/notes", requireChatmodzAuth, requireApprovedOperator, updateConversationNotes)
+router.put("/conversations/:key/notes", requireChatmodzAuth, requireApprovedOperator, updateConversationNotes)
 
 router.post("/conversations/:key/lock", requireChatmodzAuth, requireApprovedOperator, async (req, res) => {
   const conversationId = internalId(String(req.params.key))

@@ -1,5 +1,5 @@
 import { Router, type NextFunction, type Request, type Response } from "express"
-import { createPool, type Pool, type PoolConnection } from "mysql2/promise"
+import { createPool, type Pool, type PoolConnection, type ResultSetHeader } from "mysql2/promise"
 import crypto from "node:crypto"
 import bcrypt from "bcrypt"
 import jwt from "jsonwebtoken"
@@ -57,7 +57,9 @@ let pool: Pool | null = null
 const lastActiveTouch = new Map<number, number>()
 const LAST_ACTIVE_TOUCH_INTERVAL_MS = 60_000
 const demoApplications: any[] = []
-const demoConversationNotes = new Map<number, { text: string; updatedAt: string | null; updatedByName: string | null }>()
+type ConversationNote = { id: number; text: string; createdAt: string; authorName: string }
+const demoConversationNotes = new Map<number, ConversationNote[]>()
+let demoConversationNoteId = 1
 const demoAssessmentAttempts = new Map<number, any[]>()
 const demoSafetyEscalations: any[] = []
 const demoLevels = [
@@ -194,6 +196,41 @@ async function ensureConversationColumns() {
   }
 }
 
+async function ensureConversationNoteHistory() {
+  await query(`
+    CREATE TABLE IF NOT EXISTS conversation_operator_notes (
+      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+      conversation_id BIGINT UNSIGNED NOT NULL,
+      operator_id BIGINT UNSIGNED NULL,
+      operator_name VARCHAR(160) NOT NULL,
+      note_text TEXT NOT NULL,
+      created_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+      legacy_note_source TINYINT UNSIGNED NULL DEFAULT NULL,
+      PRIMARY KEY (id),
+      UNIQUE KEY conversation_notes_legacy_unique (conversation_id, legacy_note_source),
+      KEY conversation_notes_history_idx (conversation_id, created_at, id),
+      CONSTRAINT conversation_notes_conversation_fk FOREIGN KEY (conversation_id) REFERENCES conversations (id) ON DELETE CASCADE,
+      CONSTRAINT conversation_notes_operator_fk FOREIGN KEY (operator_id) REFERENCES operators (id) ON DELETE SET NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `)
+  await query(`
+    INSERT INTO conversation_operator_notes (
+      conversation_id, operator_id, operator_name, note_text, created_at, legacy_note_source
+    )
+    SELECT
+      c.id,
+      c.operator_notes_updated_by,
+      COALESCE(o.full_name, 'Previous operator'),
+      c.operator_notes,
+      COALESCE(c.operator_notes_updated_at, c.updated_at, c.created_at),
+      1
+    FROM conversations c
+    LEFT JOIN operators o ON o.id = c.operator_notes_updated_by
+    WHERE c.operator_notes IS NOT NULL AND TRIM(c.operator_notes) <> ''
+    ON DUPLICATE KEY UPDATE id = id
+  `)
+}
+
 async function ensureAssessmentTables() {
   await query(`
     CREATE TABLE IF NOT EXISTS operator_assessments (
@@ -257,6 +294,7 @@ export async function initializeChatmodz() {
     }
     await ensureAssessmentTables()
     await ensureConversationColumns()
+    await ensureConversationNoteHistory()
     void ensurePerformanceIndexes()
   } catch (error) {
     console.error("Chatmodz startup initialization failed:", error instanceof Error ? error.message : error)
@@ -1205,11 +1243,15 @@ router.get("/conversations/:key/messages", requireChatmodzAuth, requireApprovedO
   const conversationId = internalId(String(req.params.key))
   if (!conversationId) return res.status(400).json({ error: "Invalid conversation" })
   if (isDemoMode()) {
-    const note = demoConversationNotes.get(conversationId)
+    const noteHistory = demoConversationNotes.get(conversationId) || []
+    const latestNote = noteHistory[0]
     return res.json({
       messages: [],
       users: {},
-      notes: note || { text: "", updatedAt: null, updatedByName: null },
+      notes: latestNote
+        ? { text: latestNote.text, updatedAt: latestNote.createdAt, updatedByName: latestNote.authorName }
+        : { text: "", updatedAt: null, updatedByName: null },
+      noteHistory,
       demo: true,
     })
   }
@@ -1221,6 +1263,17 @@ router.get("/conversations/:key/messages", requireChatmodzAuth, requireApprovedO
     const conversation = conversations[0]
     if (!conversation) return res.status(404).json({ error: "Conversation not found" })
     const rows = await query<any>("SELECT id, sender_type, body, media_proxy_url, media_type, sent_at, delivery_status FROM messages WHERE conversation_id = ? ORDER BY sent_at ASC, id ASC", [conversationId])
+    const noteRows = await query<any>(
+      "SELECT id, note_text, created_at, operator_name FROM conversation_operator_notes WHERE conversation_id = ? ORDER BY created_at DESC, id DESC",
+      [conversationId],
+    )
+    const noteHistory: ConversationNote[] = noteRows.map((row) => ({
+      id: Number(row.id),
+      text: String(row.note_text || ""),
+      createdAt: new Date(row.created_at).toISOString(),
+      authorName: String(row.operator_name || "Operator"),
+    }))
+    const latestNote = noteHistory[0]
     res.json({
       messages: rows.map((row) => ({
         id: Number(row.id),
@@ -1239,11 +1292,14 @@ router.get("/conversations/:key/messages", requireChatmodzAuth, requireApprovedO
         "-1": { id: -1, name: conversation.managed_profile_alias, photo: profilePhotoPath(conversation.managed_profile_photo_url, conversation.site_endpoint_base_url), profile: profileDetails(conversation.managed_profile_profile_json, conversation.site_endpoint_base_url) },
         "-2": { id: -2, name: conversation.member_alias, photo: profilePhotoPath(conversation.member_photo_url, conversation.site_endpoint_base_url), profile: profileDetails(conversation.member_profile_json, conversation.site_endpoint_base_url) },
       },
-      notes: {
-        text: conversation.operator_notes || "",
-        updatedAt: conversation.operator_notes_updated_at || null,
-        updatedByName: conversation.operator_notes_updated_by_name || null,
-      },
+      notes: latestNote
+        ? { text: latestNote.text, updatedAt: latestNote.createdAt, updatedByName: latestNote.authorName }
+        : {
+            text: conversation.operator_notes || "",
+            updatedAt: conversation.operator_notes_updated_at || null,
+            updatedByName: conversation.operator_notes_updated_by_name || null,
+          },
+      noteHistory,
     })
   } catch (error) {
     if (failConfiguration(res, error)) return
@@ -1361,10 +1417,20 @@ const updateConversationNotes = async (req: Request, res: Response) => {
   const conversationId = internalId(String(req.params.key))
   if (!conversationId) return res.status(400).json({ error: "Invalid conversation" })
   const text = String(req.body?.notes ?? req.body?.text ?? "").trim().slice(0, MAX_OPERATOR_NOTES)
+  if (!text) return res.status(400).json({ error: "Write a note before saving" })
   if (isDemoMode()) {
-    const note = { text, updatedAt: new Date().toISOString(), updatedByName: req.chatmodzOperator!.full_name }
-    demoConversationNotes.set(conversationId, note)
-    return res.json({ notes: note, demo: true })
+    const note: ConversationNote = {
+      id: demoConversationNoteId++,
+      text,
+      createdAt: new Date().toISOString(),
+      authorName: req.chatmodzOperator!.full_name,
+    }
+    demoConversationNotes.set(conversationId, [note, ...(demoConversationNotes.get(conversationId) || [])])
+    return res.json({
+      note,
+      notes: { text: note.text, updatedAt: note.createdAt, updatedByName: note.authorName },
+      demo: true,
+    })
   }
   try {
     const rows = await query<any>(
@@ -1377,20 +1443,34 @@ const updateConversationNotes = async (req: Request, res: Response) => {
       && conversation.lock_expires_at
       && new Date(conversation.lock_expires_at).getTime() > Date.now()
     if (!ownsLock) return res.status(409).json({ error: "Lock this conversation before saving notes" })
-    await query(
-      "UPDATE conversations SET operator_notes = ?, operator_notes_updated_at = NOW(), operator_notes_updated_by = ? WHERE id = ?",
-      [text || null, req.chatmodzOperator!.id, conversationId],
+    const [insertResult] = await database().execute(
+      "INSERT INTO conversation_operator_notes (conversation_id, operator_id, operator_name, note_text) VALUES (?, ?, ?, ?)",
+      [conversationId, req.chatmodzOperator!.id, req.chatmodzOperator!.full_name, text],
     )
+    const noteId = Number((insertResult as ResultSetHeader).insertId)
+    const insertedRows = await query<any>(
+      "SELECT id, note_text, created_at, operator_name FROM conversation_operator_notes WHERE id = ? LIMIT 1",
+      [noteId],
+    )
+    const inserted = insertedRows[0]
+    if (!inserted) throw new Error("Saved note could not be loaded")
+    const note: ConversationNote = {
+      id: Number(inserted.id),
+      text: String(inserted.note_text || ""),
+      createdAt: new Date(inserted.created_at).toISOString(),
+      authorName: String(inserted.operator_name || "Operator"),
+    }
     try {
       await recordActivity(req.chatmodzOperator!.id, "note", conversationId)
     } catch (activityError) {
       console.error("[Chatmodz] Note saved but activity logging failed:", activityError)
     }
     res.json({
+      note,
       notes: {
-        text,
-        updatedAt: new Date().toISOString(),
-        updatedByName: req.chatmodzOperator!.full_name,
+        text: note.text,
+        updatedAt: note.createdAt,
+        updatedByName: note.authorName,
       },
     })
   } catch (error) {

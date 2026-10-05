@@ -228,6 +228,21 @@ type Conversation = {
 type Message = { id: number; senderType?: "member" | "managed_profile" | "system"; u1: number; u2: number; message: string; time: number; read: number; mediaUrl?: string; mediaType?: string };
 type Stats = { activeLocks: number; totalConversations: number; messagesSent: number };
 type ConversationNotes = { text: string; updatedAt: string | null; updatedByName: string | null };
+type OperatorNote = { id: number | string; text: string; createdAt: string; authorName: string };
+
+function readOperatorNotes(payload: { noteHistory?: unknown; notes?: ConversationNotes } | null, conversationKey: string): OperatorNote[] {
+  if (Array.isArray(payload?.noteHistory) && payload.noteHistory.length) {
+    return payload.noteHistory as OperatorNote[];
+  }
+  const legacyNote = payload?.notes;
+  if (!legacyNote?.text?.trim()) return [];
+  return [{
+    id: `legacy-${conversationKey}`,
+    text: legacyNote.text,
+    createdAt: legacyNote.updatedAt || "",
+    authorName: legacyNote.updatedByName || "Previous operator",
+  }];
+}
 
 function countMeaningfulChars(value: string) {
   return Array.from(value).filter((character) => !/\s/u.test(character)).length;
@@ -871,8 +886,9 @@ function ConversationPage({ inline = false, embeddedKey = "" }: { inline?: boole
   const [draft, setDraft] = useState("");
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [media, setMedia] = useState<{ file: File; preview: string; type: string } | null>(null);
-  const [notes, setNotes] = useState<ConversationNotes>({ text: "", updatedAt: null, updatedByName: null });
-  const [savedNotes, setSavedNotes] = useState("");
+  const [noteHistory, setNoteHistory] = useState<OperatorNote[]>([]);
+  const [noteDraft, setNoteDraft] = useState("");
+  const [noteHistorySupported, setNoteHistorySupported] = useState<boolean | null>(null);
   const [savingNotes, setSavingNotes] = useState(false);
   const [panicCategory, setPanicCategory] = useState("underage");
   const [panicDetails, setPanicDetails] = useState("");
@@ -898,13 +914,17 @@ function ConversationPage({ inline = false, embeddedKey = "" }: { inline?: boole
       const data = await response.json();
       setMessages(data.messages || []);
       setUsers(data.users || {});
-      const loadedNotes = data.notes || { text: "", updatedAt: null, updatedByName: null };
-      setNotes(loadedNotes);
-      setSavedNotes(loadedNotes.text);
+      setNoteHistory(readOperatorNotes(data, conversationKey));
+      setNoteHistorySupported(Array.isArray(data.noteHistory));
     }
     setLoading(false);
   }, [conversationKey, token]);
-  useEffect(() => { loadMessages(); }, [loadMessages]);
+  useEffect(() => {
+    setNoteHistory([]);
+    setNoteDraft("");
+    setNoteHistorySupported(null);
+    loadMessages();
+  }, [loadMessages]);
   useEffect(() => {
     if (!conversationKey) return;
     const frame = window.requestAnimationFrame(() => {
@@ -938,19 +958,23 @@ function ConversationPage({ inline = false, embeddedKey = "" }: { inline?: boole
     setLocking(false);
   };
   const saveNotes = async () => {
-    if (!selected || !token || !lockedByMe) return;
+    const text = noteDraft.trim();
+    if (!selected || !token || !lockedByMe || !noteHistorySupported || !text) return;
     setSavingNotes(true);
     try {
       const response = await authFetch(token, `/api/chatmodz/conversations/${selected.key}/notes`, {
         method: "POST",
-        body: JSON.stringify({ notes: notes.text }),
+        body: JSON.stringify({ notes: text }),
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.error || "Notes could not be saved");
-      const saved = data.notes || { ...notes, updatedAt: new Date().toISOString(), updatedByName: user?.name || "You" };
-      setNotes(saved);
-      setSavedNotes(saved.text);
-      notify("Shared operator notes saved");
+      if (!data.note || typeof data.note.text !== "string") {
+        throw new Error("The Chatmodz API must be updated before it can save note history");
+      }
+      const saved: OperatorNote = data.note;
+      setNoteHistory((current) => [saved, ...current]);
+      setNoteDraft("");
+      notify("Handoff note added");
     } catch (error) {
       notify(error instanceof Error ? error.message : "Notes could not be saved");
     } finally {
@@ -1030,7 +1054,68 @@ function ConversationPage({ inline = false, embeddedKey = "" }: { inline?: boole
          <div className="messages" ref={messagesRef}>{loading ? <div className="empty-state"><RefreshCw className="spin" size={24} /><strong>Loading messages</strong></div> : messages.length ? messages.map((message, index) => { const byFake = message.senderType === "managed_profile" || message.u1 === selected.fakeUser.id; const sender = users[String(message.u1)] || (byFake ? selected.fakeUser : selected.realUser); return <div key={message.id} className={`message ${byFake ? "operator" : "member"}`}><Avatar photo={sender.photo} name={sender.name} size={27} /><div><div className="bubble">{message.mediaUrl && <MediaBubble message={message} />}{message.message && <p>{message.message}</p>}<div className="message-meta">{timeAgo(message.time)} {index === messages.length - 1 && <strong>{byFake ? "Waiting for member" : "Needs reply"}</strong>}</div></div></div></div>; }) : <div className="empty-state"><MessageSquare size={25} /><strong>No messages in this conversation</strong><span>The connected source returned an empty thread.</span></div>}</div>
         <div className="composer">{suggestions.length > 0 && <div className="canned-row">{suggestions.map((suggestion) => <button key={suggestion} className="canned" onClick={() => setDraft(suggestion)}>{suggestion}</button>)}</div>}{media && <div className="media-pending"><span>{media.type} attached</span><button className="icon-button" onClick={() => { URL.revokeObjectURL(media.preview); setMedia(null); }} aria-label="Remove attachment"><X size={14} /></button></div>}<div className="composer-row"><textarea value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={keyDown} onCopy={(event) => { if (!isAdmin) event.preventDefault(); }} onCut={(event) => { if (!isAdmin) event.preventDefault(); }} onPaste={(event) => { if (!isAdmin) event.preventDefault(); }} onDrop={(event) => { if (!isAdmin) event.preventDefault(); }} placeholder={lockedByMe ? "Write a thoughtful reply…" : "Lock this conversation before replying"} disabled={!lockedByMe || sending} aria-label="Reply message" /><div className="composer-tools"><input ref={inputRef} type="file" accept="image/*,video/*,audio/*" hidden onChange={handleFile} /><button className="icon-button" onClick={() => inputRef.current?.click()} disabled={!lockedByMe || sending} aria-label="Attach media"><Paperclip size={16} /></button><button className="button primary" onClick={send} disabled={!canSend || sending}><Send size={14} /> {sending ? "Sending…" : "Send"}</button></div></div><div className={`reply-counter ${meaningful > 0 && meaningful < MIN_REPLY_CHARS ? "short" : ""}`}>{`${meaningful}/${MIN_REPLY_CHARS} non-space characters required`} · Include a relevant follow-up question · Enter to send, Shift+Enter for a new line</div></div>
       </section>
-        <aside className="panel conversation-side"><div className="side-section profile-section"><div className="side-title">People in this chat</div><div className="profile-stack"><ProfileCard profileUser={users["-1"] || selected.fakeUser} tone="managed" /><ProfileCard profileUser={users["-2"] || selected.realUser} tone="member" /></div></div><div className="side-section"><div className="side-title">Conversation details</div><div className="detail-line"><span>Latest activity</span><span>{timeAgo(selected.lastTime)}</span></div><div className="detail-line"><span>Messages</span><span>{selected.msgCount}</span></div><div className="detail-line"><span>Assignment</span><span>{lockedByMe ? "You" : selected.lock ? selected.lock.moderatorName : "Available"}</span></div></div><div className="side-section shared-notes"><div className="side-title">Shared operator notes</div><p className="tiny-text notes-help">Private to operators. Record what was discussed, promised, or already provided so the next operator can continue naturally.</p><textarea className="form-field notes-field" value={notes.text} maxLength={5000} onChange={(event) => setNotes((current) => ({ ...current, text: event.target.value }))} placeholder={lockedByMe ? "What did the user ask for? What was promised or already given?" : "Lock this conversation to view and update notes"} disabled={!lockedByMe || savingNotes} aria-label="Shared operator notes" /><div className="notes-actions"><span className="tiny-text">{notes.text.length}/5000</span><button className="button amber compact" onClick={saveNotes} disabled={!lockedByMe || savingNotes || notes.text === savedNotes}>{savingNotes ? "Saving…" : "Save notes"}</button></div>{notes.updatedAt && <span className="tiny-text notes-updated">Updated by {notes.updatedByName || "an operator"} · {new Date(notes.updatedAt).toLocaleString()}</span>}</div><div className="side-section"><div className="side-title">Reply quality</div><div className="notice"><ShieldCheck size={13} /> Keep replies warm, direct, and personal.</div></div><div className="side-section"><div className="side-title">Lock policy</div><div className="tiny-text"><Clock3 size={13} style={{ verticalAlign: "middle", marginRight: 5 }} /> Locks last 10 minutes and are renewed while this conversation is open.</div></div></aside>
+        <aside className="panel conversation-side">
+          <div className="side-section profile-section">
+            <div className="side-title">People in this chat</div>
+            <div className="profile-stack">
+              <ProfileCard profileUser={users["-1"] || selected.fakeUser} tone="managed" />
+              <ProfileCard profileUser={users["-2"] || selected.realUser} tone="member" />
+            </div>
+          </div>
+          <div className="side-section">
+            <div className="side-title">Conversation details</div>
+            <div className="detail-line"><span>Latest activity</span><span>{timeAgo(selected.lastTime)}</span></div>
+            <div className="detail-line"><span>Messages</span><span>{selected.msgCount}</span></div>
+            <div className="detail-line"><span>Assignment</span><span>{lockedByMe ? "You" : selected.lock ? selected.lock.moderatorName : "Available"}</span></div>
+          </div>
+          <div className="side-section shared-notes">
+            <div className="side-title">Shared operator notes</div>
+            <p className="tiny-text notes-help">Private to operators, not sent in chat. Each entry stays attached to this conversation for future handoffs.</p>
+            {noteHistorySupported === null && <p className="tiny-text notes-status">Loading saved notes…</p>}
+            {noteHistorySupported === false && <p className="tiny-text notes-warning">The Chatmodz API needs the note-history update before new notes can be added.</p>}
+            <div className="notes-history-heading">Saved notes <span>{noteHistory.length}</span></div>
+            {noteHistory.length ? (
+              <div className="notes-history" aria-label="Saved operator note history">
+                {noteHistory.map((note) => (
+                  <article className="notes-history-entry" key={note.id}>
+                    <div className="notes-history-meta">
+                      <strong>{note.authorName || "Operator"}</strong>
+                      <time dateTime={note.createdAt || undefined}>{note.createdAt ? new Date(note.createdAt).toLocaleString() : "Previous note"}</time>
+                    </div>
+                    <p>{note.text}</p>
+                  </article>
+                ))}
+              </div>
+            ) : noteHistorySupported !== null ? (
+              <p className="tiny-text notes-empty">No handoff notes saved for this conversation yet.</p>
+            ) : null}
+            <label className="notes-compose-label" htmlFor="operator-note-draft">Add a handoff note</label>
+            <textarea
+              id="operator-note-draft"
+              className="form-field notes-field"
+              value={noteDraft}
+              maxLength={5000}
+              onChange={(event) => setNoteDraft(event.target.value)}
+              placeholder="What did the user share, and what should the next operator know?"
+              disabled={!lockedByMe || savingNotes || noteHistorySupported !== true}
+              aria-label="New shared operator note"
+            />
+            <div className="notes-actions">
+              <span className="tiny-text">{noteDraft.length}/5000</span>
+              <button className="button amber compact" onClick={saveNotes} disabled={!lockedByMe || savingNotes || noteHistorySupported !== true || !noteDraft.trim()}>
+                {savingNotes ? "Saving…" : "Add note"}
+              </button>
+            </div>
+          </div>
+          <div className="side-section">
+            <div className="side-title">Reply quality</div>
+            <div className="notice"><ShieldCheck size={13} /> Keep replies warm, direct, and personal.</div>
+          </div>
+          <div className="side-section">
+            <div className="side-title">Lock policy</div>
+            <div className="tiny-text"><Clock3 size={13} style={{ verticalAlign: "middle", marginRight: 5 }} /> Locks last 10 minutes and are renewed while this conversation is open.</div>
+          </div>
+        </aside>
     </div><Toast message={notice} />
    </div>;
   return inline ? content : <Shell>{content}</Shell>;

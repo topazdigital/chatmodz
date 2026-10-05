@@ -21,8 +21,8 @@ The web artifact is a live-data client for the dedicated Chatmodz API:
   status, media metadata, and browser push notification controls
 - visible reply rules, 25-minute timing alerts and review records, and
   recruiter/admin-only Panic Room reports for the defined severe safety cases
-- shared conversation notes with lock checks and POST requests for Apache
-  compatibility; the API also accepts PUT from older clients
+- append-only shared operator handoff notes, each saved with its author and
+  timestamp in a conversation-linked history separate from customer messages
 - administrator-only application approval, operator status, site health,
   attribution, delivery reporting, and operator compensation levels
 - three-level staff hierarchy: administrators manage recruiters, recruiters
@@ -44,10 +44,12 @@ Chatmodz is designed for its own MySQL 8 database. Apply
 `database/schema.mysql.sql` to a dedicated database when the live API is
 connected. Do not point it at a dating site's database.
 
-The startup initializer creates the assessment and safety-escalation tables and
-ensures the optional conversation notes/profile columns exist. The schema file
-is the canonical database definition and should be applied before using the
-production API.
+The startup initializer creates the assessment, safety-escalation, and
+conversation note-history tables, and ensures the optional conversation
+notes/profile columns exist. On upgrade, the current single note for each
+conversation is imported into its history once. Older overwritten note versions
+cannot be recovered. The schema file is the canonical database definition and
+should be applied before using the production API.
 
 If applying the recruiter hierarchy to an existing Chatmodz database, update
 the `operators.role` enum to include `recruiter` and add the nullable

@@ -156,6 +156,21 @@ CREATE TABLE IF NOT EXISTS conversations (
   CONSTRAINT conversations_notes_operator_fk FOREIGN KEY (operator_notes_updated_by) REFERENCES operators (id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS conversation_operator_notes (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  conversation_id BIGINT UNSIGNED NOT NULL,
+  operator_id BIGINT UNSIGNED NULL,
+  operator_name VARCHAR(160) NOT NULL,
+  note_text TEXT NOT NULL,
+  created_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  legacy_note_source TINYINT UNSIGNED NULL DEFAULT NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY conversation_notes_legacy_unique (conversation_id, legacy_note_source),
+  KEY conversation_notes_history_idx (conversation_id, created_at, id),
+  CONSTRAINT conversation_notes_conversation_fk FOREIGN KEY (conversation_id) REFERENCES conversations (id) ON DELETE CASCADE,
+  CONSTRAINT conversation_notes_operator_fk FOREIGN KEY (operator_id) REFERENCES operators (id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS operator_safety_escalations (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   conversation_id BIGINT UNSIGNED NOT NULL,
